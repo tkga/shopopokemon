@@ -75,7 +75,7 @@ export function ensureProductCode(data, name, variantKey) {
   if (existing) return { code: existing.code, productCodes, counters: data.counters };
   const nextN = (data.counters?.product || 0) + 1;
   const code = productCodeFromCounter(nextN);
-  const entry = { key, code, name: (name || "").trim(), variant: variantKey || "normal" };
+  const entry = { key, code, name: (name || "").trim(), variant: variantKey || "normal", featuredOrder: null };
   return {
     code,
     productCodes: [...productCodes, entry],
@@ -297,7 +297,7 @@ export function migrateData(parsed) {
   d.gameAccounts = (d.gameAccounts || []).map(a => ({
     ...a,
     // productCode: "" สำหรับสต๊อกเก่าที่เพิ่มไว้ก่อนมีระบบรหัสสินค้า — เติมรหัสจริงให้ทันทีด้านล่าง
-    stock: (a.stock || []).map(s => ({ lowStockThreshold: 2, variants: ["normal"], photoDataUrl: "", price: 0, productCode: "", featuredOrder: null, ...s })),
+    stock: (a.stock || []).map(s => ({ lowStockThreshold: 2, variants: ["normal"], photoDataUrl: "", price: 0, productCode: "", ...s })),
   }));
   // เติมรหัสสินค้าให้สต๊อกเก่าที่ยังไม่มีรหัส (ของก่อนมีระบบรหัสสินค้า) ทันทีตอนโหลดข้อมูล — ไม่ต้องรอ
   // ให้ผู้ใช้แก้ไข/บันทึกทีละชิ้นก่อนถึงจะค้นหาด้วยรหัสเจอ (สินค้าชื่อ+ประเภทเดียวกันได้รหัสเดียวกันเสมอ)
@@ -346,6 +346,8 @@ export function migrateData(parsed) {
   if (!Array.isArray(d.stockMovements)) d.stockMovements = [];
   if (!Array.isArray(d.pokemonVariants) || d.pokemonVariants.length === 0) d.pokemonVariants = defaultPokemonVariants();
   if (!Array.isArray(d.productCodes)) d.productCodes = [];
+  // ของเก่าก่อนมีระบบสินค้าแนะนำจะไม่มี featuredOrder ในแต่ละ entry — เติมเป็น null (ไม่แนะนำ) ให้
+  d.productCodes = d.productCodes.map(p => ({ featuredOrder: null, ...p }));
   return d;
 }
 
@@ -393,38 +395,35 @@ export function genVariantKey(label, existingKeys) {
 }
 
 // ---------- สินค้าแนะนำ (โชว์ก่อนในหน้า catalog ของลูกค้า) ----------
-// เก็บผ่าน field "featuredOrder" ในตัวสต๊อกแต่ละชิ้น: null/undefined = ไม่แนะนำ, ตัวเลข = ลำดับที่โชว์
-// (น้อยกว่า = ขึ้นก่อน) ผูกกับ "หน่วยสต๊อกชิ้นนี้โดยเฉพาะ" (ไม่เหมือนรหัสสินค้าที่ผูกกับชื่อ+ประเภท) เพราะ
-// สินค้าแนะนำมักตั้งใจเลือกจากไอดีใดไอดีหนึ่งที่มีของพร้อมขายจริง ไม่ใช่ทุกไอดีที่มีชื่อ+ประเภทเดียวกัน
+// ผูกกับ "รหัสสินค้า" (เช่น A014) ไม่ใช่หน่วยสต๊อกในไอดีใดไอดีหนึ่ง — เพราะรหัสสินค้าเป็นตัวแทนของ
+// "ชนิดสินค้า" (ชื่อ+ประเภท) ข้ามทุกไอดีอยู่แล้ว (ดู ensureProductCode ด้านบน) ตั้งแนะนำครั้งเดียวมีผล
+// กับของชนิดนี้ทุกไอดีที่มี ไม่ต้องมากดซ้ำทีละไอดี และไม่โผล่ซ้ำหลายแถวในเมนูจัดการเหมือนถ้าผูกกับ
+// หน่วยสต๊อกเป็นแถวๆ ไป — เก็บไว้ที่ entry ใน data.productCodes (field featuredOrder: null = ไม่แนะนำ,
+// ตัวเลข = ลำดับที่โชว์ น้อยกว่า = ขึ้นก่อน)
 
-// รวมรายการสต๊อกที่ถูกตั้ง "แนะนำ" จากทุกไอดี เรียงตามลำดับที่ตั้งไว้ (featuredOrder น้อย = ขึ้นก่อน)
-export function featuredStockList(data) {
-  const list = [];
-  (data.gameAccounts || []).forEach((a) => (a.stock || []).forEach((s) => {
-    if (s.featuredOrder != null) list.push({ account: a, item: s });
-  }));
-  return list.sort((x, y) => (x.item.featuredOrder ?? 0) - (y.item.featuredOrder ?? 0));
+// รวมรหัสสินค้าที่ถูกตั้ง "แนะนำ" เรียงตามลำดับที่ตั้งไว้
+export function featuredProductCodes(data) {
+  return (data.productCodes || [])
+    .filter((p) => p.featuredOrder != null)
+    .sort((a, b) => a.featuredOrder - b.featuredOrder);
 }
 
-// เขียน featuredOrder (0,1,2,...) ทับลง gameAccounts ตามลำดับ id ที่ส่งมาใน orderedStockIds
-// (ชิ้นไหนไม่อยู่ในลิสต์นี้ = ไม่แนะนำ -> featuredOrder: null) ใช้ทั้งตอนติ๊กเปิด/ปิดและตอนลากจัดลำดับใหม่
-export function applyFeaturedOrder(gameAccounts, orderedStockIds) {
-  const rank = new Map(orderedStockIds.map((id, i) => [id, i]));
-  return gameAccounts.map((a) => ({
-    ...a,
-    stock: (a.stock || []).map((s) => ({ ...s, featuredOrder: rank.has(s.id) ? rank.get(s.id) : null })),
-  }));
+// เขียน featuredOrder (0,1,2,...) ทับลง productCodes ตามลำดับ "รหัสสินค้า" ที่ส่งมาใน orderedCodes
+// (รหัสไหนไม่อยู่ในลิสต์นี้ = ไม่แนะนำ -> featuredOrder: null)
+export function applyFeaturedOrder(productCodes, orderedCodes) {
+  const rank = new Map(orderedCodes.map((c, i) => [c, i]));
+  return (productCodes || []).map((p) => ({ ...p, featuredOrder: rank.has(p.code) ? rank.get(p.code) : null }));
 }
 
-// สลับสถานะ "แนะนำ" ของสต๊อกชิ้นหนึ่ง — เปิด: ต่อท้ายลำดับแนะนำปัจจุบัน (ล่าสุด),
+// สลับสถานะ "แนะนำ" ของรหัสสินค้าหนึ่งตัว — เปิด: ต่อท้ายลำดับแนะนำปัจจุบัน (ล่าสุด),
 // ปิด: เอาออกแล้ว "อัดลำดับ" ที่เหลือใหม่ให้ต่อเนื่องไม่มีช่องว่าง
-export function toggleFeatured(gameAccounts, stockId) {
-  const current = featuredStockList({ gameAccounts });
-  const already = current.some((x) => x.item.id === stockId);
-  const nextIds = already
-    ? current.filter((x) => x.item.id !== stockId).map((x) => x.item.id)
-    : [...current.map((x) => x.item.id), stockId];
-  return applyFeaturedOrder(gameAccounts, nextIds);
+export function toggleFeatured(productCodes, code) {
+  const current = featuredProductCodes({ productCodes });
+  const already = current.some((p) => p.code === code);
+  const nextCodes = already
+    ? current.filter((p) => p.code !== code).map((p) => p.code)
+    : [...current.map((p) => p.code), code];
+  return applyFeaturedOrder(productCodes, nextCodes);
 }
 
 export function adjustStock(gameAccounts, accountId, stockItemId, delta) {

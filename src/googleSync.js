@@ -107,8 +107,9 @@ const SHEETS = {
   // "รหัสสินค้า" (เช่น A014) ก็ถูกเพิ่มต่อท้ายด้วยเหตุผลเดียวกัน — เป็นรหัสที่ลูกค้าเห็นในหน้า catalog แล้ว
   // ส่งกลับมาบอกร้าน ผูกกับ "ชื่อ+ประเภท" (เหมือนกันได้ทุกไอดี) ไม่ใช่รหัสเฉพาะแถวนี้แถวเดียว
   // "ลำดับแนะนำ" ถูกเพิ่มต่อท้ายสุดด้วยเหตุผลเดียวกันอีกเช่นกัน — ว่างเปล่า = สินค้าปกติ, มีเลข (1,2,3,...)
-  // = ถูกตั้งเป็น "สินค้าแนะนำ" จากเมนูในแอป ผูกกับ "หน่วยสต๊อกชิ้นนี้" (ไม่เหมือนรหัสสินค้าที่ผูกกับชื่อ+ประเภท)
-  // เพราะมักตั้งใจเลือกจากไอดีที่มีของพร้อมขายจริง หน้า catalog อ่านคอลัมน์นี้ไปดันสินค้าขึ้นแสดงก่อน
+  // = ถูกตั้งเป็น "สินค้าแนะนำ" จากเมนูในแอป ผูกกับ "รหัสสินค้า" (เหมือน "รหัสสินค้า" คอลัมน์ก่อนหน้า) ไม่ใช่
+  // หน่วยสต๊อกในไอดีใดไอดีหนึ่ง — ของชนิดเดียวกันจากคนละไอดีเลยได้เลขลำดับแนะนำเดียวกันเสมอ (มาจาก
+  // data.productCodes ไม่ใช่จากตัวหน่วยสต๊อกเอง ดู syncAll()) หน้า catalog อ่านคอลัมน์นี้ไปดันสินค้าขึ้นแสดงก่อน
   stock: { title: "Stock", headers: ["ชื่อไอดี", "ชื่อสินค้า (Pokémon)", "ชนิด", "จำนวนคงเหลือ", "แจ้งเตือนเมื่อเหลือ ≤", "รูปสินค้า", "ลิงก์รูป (ห้ามลบ)", "ราคาต่อตัว", "รหัสสินค้า", "ลำดับแนะนำ"] },
   finance: { title: "Finance", headers: ["วันที่", "ประเภท", "จำนวนเงิน", "หมายเหตุ"] },
 };
@@ -348,21 +349,26 @@ function accountSummaryRow(a, data) {
 //   MEGUMINLUCK   Mewtwo     ปกติ    5   2
 // Kept separate from Accounts so an account with hundreds of products doesn't bury the
 // account-level totals; filter/sort by "ชื่อไอดี" in this tab to find one account's products.
-function stockRows(a) {
+function stockRows(a, featuredByCode) {
   const stock = a.stock || [];
-  return stock.map((s) => [
-    a.name,
-    s.name,
-    (s.variants || []).map((v) => VARIANT_LABELS[v] || v).filter(Boolean).join(", ") || "-",
-    Number(s.quantity) || 0,
-    s.lowStockThreshold ?? "",
-    s.photoDriveFileId ? driveImageFormula(s.photoDriveFileId) : "",
-    s.photoDriveFileId ? driveImageUrl(s.photoDriveFileId) : "",
-    Number(s.price) || "",
-    s.productCode || "",
-    // ส่งเป็นเลขเริ่ม 1 (อ่านง่ายกว่าในชีต) — featuredOrder ในแอปเก็บแบบเริ่ม 0 (ดู applyFeaturedOrder ใน utils.js)
-    s.featuredOrder != null ? Number(s.featuredOrder) + 1 : "",
-  ]);
+  return stock.map((s) => {
+    const fo = s.productCode ? featuredByCode?.[s.productCode] : null;
+    return [
+      a.name,
+      s.name,
+      (s.variants || []).map((v) => VARIANT_LABELS[v] || v).filter(Boolean).join(", ") || "-",
+      Number(s.quantity) || 0,
+      s.lowStockThreshold ?? "",
+      s.photoDriveFileId ? driveImageFormula(s.photoDriveFileId) : "",
+      s.photoDriveFileId ? driveImageUrl(s.photoDriveFileId) : "",
+      Number(s.price) || "",
+      s.productCode || "",
+      // ส่งเป็นเลขเริ่ม 1 (อ่านง่ายกว่าในชีต) — featuredOrder ใน data.productCodes เก็บแบบเริ่ม 0
+      // (ดู applyFeaturedOrder ใน utils.js) มาจาก "รหัสสินค้า" ไม่ใช่หน่วยสต๊อกนี้โดยตรง — ทุกไอดีที่มีของ
+      // ชนิดนี้จะได้ค่าเดียวกันเสมอ
+      fo != null ? Number(fo) + 1 : "",
+    ];
+  });
 }
 
 async function getSheetIdMap(token, spreadsheetId) {
@@ -487,6 +493,11 @@ export async function syncAll({ token, spreadsheetId, folderId, data, onStatus }
   gameAccounts.forEach((a) => (a.stock || []).forEach((s) => { if (s.id) codeMap[s.id] = s.productCode || ""; }));
   const codeOf = (stockItemId) => codeMap[stockItemId] || "";
 
+  // แผนที่ รหัสสินค้า -> ลำดับแนะนำ อ่านจาก data.productCodes (ไม่ใช่จากตัวหน่วยสต๊อกเอง) — ของชนิดเดียวกัน
+  // จากคนละไอดีเลยได้ค่าเดียวกันเสมอ ไม่ต้องตั้งซ้ำทีละไอดี
+  const featuredByCode = {};
+  (data.productCodes || []).forEach((p) => { if (p.featuredOrder != null) featuredByCode[p.code] = p.featuredOrder; });
+
   onStatus?.("กำลังเขียนข้อมูลลง Sheets...");
   const orderRowsData = orders.map((o) => orderRow(o, custName, codeOf));
   const customerRows = data.customers.map((c) => customerRow(c, spentOf));
@@ -494,7 +505,7 @@ export async function syncAll({ token, spreadsheetId, folderId, data, onStatus }
   // sorted by Pokémon name (then account name) so every account holding the same product is
   // grouped together — answers "which account(s) have Rayquaza?" at a glance, no filter needed.
   const stockSheetRows = gameAccounts
-    .flatMap((a) => stockRows(a))
+    .flatMap((a) => stockRows(a, featuredByCode))
     .sort((x, y) => (x[1] || "").localeCompare(y[1] || "", "th") || (x[0] || "").localeCompare(y[0] || "", "th"));
   const financeRows = [
     ...data.investmentHistory.map((h) => [h.date, "ลงทุน", -(Number(h.amount) || 0), h.note || ""]),

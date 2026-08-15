@@ -520,13 +520,15 @@ export default function App() {
     });
     showToast("ย้ายสต๊อกไปถังขยะแล้ว (กู้คืนได้ในตั้งค่า)");
   }
-  // สลับสถานะ "สินค้าแนะนำ" ของสต๊อกชิ้นหนึ่ง (เปิด/ปิด) — ทำงานทันที ไม่ต้องรอกดบันทึกฟอร์มสต๊อก
-  function toggleFeaturedStock(stockId) {
-    setData(d => ({ ...d, gameAccounts: toggleFeatured(d.gameAccounts, stockId) }));
+  // สลับสถานะ "สินค้าแนะนำ" ของรหัสสินค้าหนึ่งตัว (เปิด/ปิด) — ผูกกับรหัสสินค้า (ชื่อ+ประเภท) ไม่ใช่
+  // หน่วยสต๊อกในไอดีใดไอดีหนึ่ง เพราะฉะนั้นมีผลกับของชนิดนี้ทุกไอดีที่มีพร้อมกัน ทำงานทันที ไม่ต้องรอกดบันทึกฟอร์มสต๊อก
+  function toggleFeaturedStock(productCode) {
+    if (!productCode) return;
+    setData(d => ({ ...d, productCodes: toggleFeatured(d.productCodes, productCode) }));
   }
-  // จัดลำดับสินค้าแนะนำใหม่ทั้งชุด (จากการลากในเมนู "สินค้าแนะนำ") — orderedStockIds คือลำดับใหม่ทั้งหมด
-  function reorderFeatured(orderedStockIds) {
-    setData(d => ({ ...d, gameAccounts: applyFeaturedOrder(d.gameAccounts, orderedStockIds) }));
+  // จัดลำดับสินค้าแนะนำใหม่ทั้งชุด (จากการลากในเมนู "สินค้าแนะนำ") — orderedCodes คือลำดับรหัสสินค้าใหม่ทั้งหมด
+  function reorderFeatured(orderedCodes) {
+    setData(d => ({ ...d, productCodes: applyFeaturedOrder(d.productCodes, orderedCodes) }));
   }
   // ---------- trash bin: restore / permanently delete ----------
   function restoreFromTrash(trashId) {
@@ -749,11 +751,13 @@ export default function App() {
     );
   }
 
-  // สต๊อกชิ้นที่กำลังเปิดอยู่ใน StockModal อ่านสด ๆ จาก data (ไม่ใช่ snapshot ตอนเปิด modal) — ใช้เช็ค
-  // สถานะ "แนะนำ" ล่าสุดให้ปุ่มใน StockModal อัปเดตทันทีหลังกด toggle โดยไม่ต้องปิด-เปิด modal ใหม่
-  const stockModalLiveItem = modal?.type === "stock" && modal.mode === "edit" && modal.item
-    ? data.gameAccounts.find(a => a.id === modal.accountId)?.stock?.find(s => s.id === modal.item.id)
-    : null;
+  // สถานะ "แนะนำ" ของสต๊อกชิ้นที่กำลังเปิดใน StockModal — เช็คจาก data.productCodes สด ๆ (ไม่ใช่ snapshot
+  // ตอนเปิด modal) เพื่อให้ปุ่มอัปเดตทันทีหลังกด toggle โดยไม่ต้องปิด-เปิด modal ใหม่ อิงตาม "รหัสสินค้า"
+  // ของหน่วยสต๊อกนี้ (ผูกกับชื่อ+ประเภท ไม่ใช่ตัวไอดีนี้โดยเฉพาะ — ดูคอมเมนต์ที่ toggleFeatured ใน utils.js)
+  const stockModalProductCode = modal?.type === "stock" && modal.mode === "edit" && modal.item ? modal.item.productCode : null;
+  const stockModalIsFeatured = stockModalProductCode
+    ? (data.productCodes || []).some(p => p.code === stockModalProductCode && p.featuredOrder != null)
+    : false;
 
   return (
     <div className="pgs-root">
@@ -864,8 +868,8 @@ export default function App() {
           onClose={() => setModal(null)}
           onSave={(item) => { saveStock(modal.accountId, item); setModal(null); }}
           onDelete={modal.mode === "edit" ? () => { deleteStock(modal.accountId, modal.item.id); setModal(null); } : null}
-          isFeatured={!!(stockModalLiveItem && stockModalLiveItem.featuredOrder != null)}
-          onToggleFeatured={stockModalLiveItem ? () => toggleFeaturedStock(stockModalLiveItem.id) : null}
+          isFeatured={stockModalIsFeatured}
+          onToggleFeatured={stockModalProductCode ? () => toggleFeaturedStock(stockModalProductCode) : null}
         />
       )}
       {modal?.type === "codesearch" && (
