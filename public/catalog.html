@@ -134,6 +134,12 @@
     background: rgba(11,18,32,0.82); color: var(--yellow); border: 1px solid var(--yellow-dim);
     letter-spacing: 0.3px;
   }
+  /* ป้าย "แนะนำ" — สินค้าที่ร้านปักไว้ให้โชว์ก่อน (ดู FeaturedModal.jsx ในแอปจัดการร้าน) */
+  .featured-pill {
+    position: absolute; top: 8px; right: 8px; z-index: 1; font-size: 10px; font-weight: 700; padding: 3px 8px;
+    border-radius: 999px; background: var(--yellow); color: #1a1400; letter-spacing: 0.3px;
+    display: flex; align-items: center; gap: 3px;
+  }
   .card-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
   .card-name { font-size: 14px; font-weight: 500; line-height: 1.25; }
   /* ป้ายรหัสสินค้า (เช่น "รหัส A014") — ให้ลูกค้าคัดลอก/พิมพ์ส่งกลับมาแทนการแคปหน้าจอ+อธิบายเป็นคำ ๆ */
@@ -406,7 +412,10 @@
         // "รหัสสินค้า" (เช่น A014) ถูกเพิ่มเป็นคอลัมน์ที่ 9 (index 8) ต่อท้ายชีต Stock — ไม่แทรกกลาง
         // เพื่อไม่ให้ index คอลัมน์เดิม (โดยเฉพาะ "ลิงก์รูป" ที่อ่านที่ val(6)) เปลี่ยนตำแหน่ง
         // ชีตเก่าที่ยังไม่มีคอลัมน์นี้ val(8) จะว่างเปล่า — ไม่พังอะไร แค่การ์ดจะไม่โชว์ป้ายรหัส
-        code: String(val(8) || '').trim()
+        code: String(val(8) || '').trim(),
+        // "ลำดับแนะนำ" คอลัมน์ที่ 10 (index 9) — ว่าง/ไม่ใช่ตัวเลข = ไม่ใช่สินค้าแนะนำ (null)
+        // ชีตเก็บเป็นเลขเริ่ม 1 (ดู stockRows ใน googleSync.js) แปลงกลับเป็น 0-based ที่นี่เพื่อความสม่ำเสมอ
+        featuredOrder: (function () { var n = Number(val(9)); return val(9) !== '' && !isNaN(n) ? n - 1 : null; })()
       };
     }).filter(function (r) { return r.name; });
 
@@ -418,7 +427,7 @@
     rows.forEach(function (r) {
       var key = r.name + '|' + r.variant;
       if (!map[key]) {
-        map[key] = { name: r.name, variant: r.variant, qty: 0, threshold: r.threshold, photoUrl: r.photoUrl, minPrice: null, maxPrice: null, code: r.code };
+        map[key] = { name: r.name, variant: r.variant, qty: 0, threshold: r.threshold, photoUrl: r.photoUrl, minPrice: null, maxPrice: null, code: r.code, featuredOrder: null };
         order.push(key);
       }
       map[key].qty += r.qty;
@@ -426,6 +435,10 @@
       // ชื่อ+ชนิดเดียวกันได้รหัสเดียวกันเสมออยู่แล้ว (ดู ensureProductCode ในแอปจัดการร้าน) แต่เผื่อไว้ —
       // ถ้าแถวแรกที่เจอดันไม่มีรหัส (ของเก่าก่อนอัปเดต) ก็ยังรับรหัสจากแถวถัดไปได้
       if (!map[key].code && r.code) map[key].code = r.code;
+      // ถ้าไอดีไหนไอดีหนึ่งของชื่อ+ชนิดนี้ถูกตั้งเป็นแนะนำไว้ ให้ทั้งกลุ่มถือว่าแนะนำด้วย (ใช้ลำดับที่ดีที่สุด/น้อยที่สุด)
+      if (r.featuredOrder != null && (map[key].featuredOrder == null || r.featuredOrder < map[key].featuredOrder)) {
+        map[key].featuredOrder = r.featuredOrder;
+      }
       if (r.price > 0) {
         if (map[key].minPrice === null || r.price < map[key].minPrice) map[key].minPrice = r.price;
         if (map[key].maxPrice === null || r.price > map[key].maxPrice) map[key].maxPrice = r.price;
@@ -492,7 +505,13 @@
       return true;
     });
     filtered = filtered.slice().sort(function (a, b) {
-      // สินค้าหมด (qty <= 0) ให้ขึ้นก่อนเสมอ ไม่ว่าจะเรียงด้วยโหมดไหน
+      // 1) สินค้าแนะนำ (ที่ยังมีของขาย) ขึ้นก่อนสุดเสมอ ไม่ว่าจะเรียงด้วยโหมดไหน เรียงตามลำดับที่ตั้งไว้ในแอป
+      var aFeat = a.featuredOrder != null && a.qty > 0;
+      var bFeat = b.featuredOrder != null && b.qty > 0;
+      if (aFeat !== bFeat) return aFeat ? -1 : 1;
+      if (aFeat && bFeat) return a.featuredOrder - b.featuredOrder;
+
+      // 2) สินค้าหมด (qty <= 0) ให้ขึ้นก่อนกลุ่มที่เหลือเสมอ ไม่ว่าจะเรียงด้วยโหมดไหน
       var aOut = a.qty <= 0, bOut = b.qty <= 0;
       if (aOut !== bOut) return aOut ? -1 : 1;
 
@@ -565,6 +584,7 @@
       '<div class="card' + (isOut ? ' out' : '') + '" data-key="' + escapeAttr(key) + '">' +
         '<div class="thumb' + (thumb ? '' : ' empty') + '">' +
           (it.variant ? '<span class="variant-pill">' + escapeHtml(it.variant) + '</span>' : '') +
+          (it.featuredOrder != null && !isOut ? '<span class="featured-pill">&#9733; แนะนำ</span>' : '') +
           thumb +
           (isOut ? '<span class="stamp-out small">หมด</span>' : '') +
         '</div>' +
@@ -603,6 +623,7 @@
           '</div>' +
           '<div class="modal-body">' +
             (it.variant ? '<div class="modal-variant-pill">' + escapeHtml(it.variant) + '</div>' : '') +
+            (it.featuredOrder != null && !isOut ? '<div class="featured-pill" style="position:static;display:inline-flex;margin-bottom:8px;">&#9733; แนะนำ</div>' : '') +
             '<h2 class="modal-name">' + escapeHtml(it.name) + '</h2>' +
             (it.code ? (
               '<div class="modal-stat-row">' +
