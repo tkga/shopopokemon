@@ -340,10 +340,11 @@
     });
   }
 
-  // นับยอดขายต่อ "ชื่อสินค้า" จากชีต Orders เพื่อใช้เป็นตัวเรียง "มาแรง"
-  // อ่านเฉพาะออเดอร์ประเภท sell_pokemon ที่ไม่ถูกยกเลิก คอลัมน์ "รายละเอียด" มีรูปแบบ
-  // "ชื่อโปเกมอน xจำนวน" (ดู orderRow() ใน googleSync.js) — จับคู่ตาม "ชื่อ" เท่านั้น
-  // (ไม่แยกชนิด/พันธุ์ เพราะข้อมูลออเดอร์ไม่ได้เก็บชนิดแยกไว้)
+  // นับยอดขายต่อ "รหัสสินค้า" จากชีต Orders เพื่อใช้เป็นตัวเรียง "มาแรง" และโชว์ "ขายไปแล้ว"
+  // อ่านเฉพาะออเดอร์ประเภท sell_pokemon ที่ไม่ถูกยกเลิก อิงจากคอลัมน์ "รหัสสินค้า" (คอลัมน์ที่ 13,
+  // index 12 — เพิ่มต่อท้ายชีต Orders ดู orderRow() ใน googleSync.js) แม่นยำกว่าอิงชื่อเพราะแยก
+  // ชนิด/พันธุ์ได้ (เช่น มิวทู ปกติ กับ มิวทู Shiny นับแยกกัน) — ออเดอร์เก่าก่อนอัปเดตที่ไม่มีรหัส
+  // (คอลัมน์ว่าง) จะไม่ถูกนับ ไม่พังอะไรแค่ยอดขายจะดูน้อยกว่าจริงชั่วคราวจนกว่าจะซิงก์ออเดอร์ใหม่
   function parseTrendingMap(table) {
     var map = {};
     if (!table || !table.rows) return map;
@@ -353,12 +354,12 @@
       var type = String(val(2) || '').trim();
       var cancelled = String(val(10) || '').trim();
       if (type !== 'sell_pokemon' || cancelled) return;
+      var code = String(val(12) || '').trim().toUpperCase();
+      if (!code) return;
       var desc = String(val(5) || '').trim();
-      var m = desc.match(/^(.*?)\s*x\s*(\d+)\s*$/i);
-      var name = m ? m[1].trim() : desc;
-      var qty = m ? (parseInt(m[2], 10) || 1) : 1;
-      if (!name) return;
-      map[name] = (map[name] || 0) + qty;
+      var m = desc.match(/x\s*(\d+)\s*$/i);
+      var qty = m ? (parseInt(m[1], 10) || 1) : 1;
+      map[code] = (map[code] || 0) + qty;
     });
     return map;
   }
@@ -381,9 +382,9 @@
         var rows = parseTable(stockResp.table);
         // ชีต Orders โหลดไม่สำเร็จก็ไม่เป็นไร — แค่ "มาแรง" จะเรียงตามชื่อแทนแทนการนับยอดขาย
         trendingMap = ordersResp && ordersResp.table ? parseTrendingMap(ordersResp.table) : {};
-        // แปะจำนวน "ขายไปแล้ว" ต่อชิ้นสินค้า จากยอดขายสะสมในชีต Orders (นับตามชื่อ ไม่แยกชนิด/พันธุ์
-        // เพราะข้อมูลออเดอร์ไม่ได้เก็บชนิดแยกไว้ — ดู parseTrendingMap ด้านบน)
-        rows.forEach(function (r) { r.sold = trendingMap[r.name] || 0; });
+        // แปะจำนวน "ขายไปแล้ว" ต่อชิ้นสินค้า จากยอดขายสะสมในชีต Orders อิงตามรหัสสินค้า
+        // (สินค้าที่ยังไม่มีรหัส — กรณีชีตเก่ามาก ๆ — จะไม่มียอดขายโชว์)
+        rows.forEach(function (r) { r.sold = r.code ? (trendingMap[r.code.toUpperCase()] || 0) : 0; });
         renderCatalog(rows);
       } catch (e) {
         renderError('อ่านข้อมูลไม่สำเร็จ', String(e && e.message || e));
@@ -503,8 +504,8 @@
         return sortMode === 'price_asc' ? pa - pb : pb - pa;
       }
       // trending (ค่าเริ่มต้น): เรียงตามยอดขายจากชีต Orders มาก -> น้อย, เท่ากันเรียงตามชื่อ
-      var ta = trendingMap[a.name] || 0;
-      var tb = trendingMap[b.name] || 0;
+      var ta = a.sold || 0;
+      var tb = b.sold || 0;
       if (ta !== tb) return tb - ta;
       return a.name.localeCompare(b.name, 'th');
     });
