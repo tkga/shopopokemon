@@ -134,6 +134,13 @@
     background: rgba(11,18,32,0.82); color: var(--yellow); border: 1px solid var(--yellow-dim);
     letter-spacing: 0.3px;
   }
+  /* ป้าย "แนะนำ" มุมขวาบน — สินค้าที่แอดมินติดดาวไว้ในแอปจัดการร้าน */
+  .featured-pill {
+    position: absolute; top: 8px; right: 8px; z-index: 2; font-size: 10px; font-weight: 700; padding: 3px 8px;
+    border-radius: 999px; display: flex; align-items: center; gap: 3px; letter-spacing: 0.2px;
+    background: linear-gradient(135deg, #ffe066, var(--yellow, #ffcb05)); color: #14151f;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  }
   .card-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
   .card-name { font-size: 14px; font-weight: 500; line-height: 1.25; }
   /* ป้ายรหัสสินค้า (เช่น "รหัส A014") — ให้ลูกค้าคัดลอก/พิมพ์ส่งกลับมาแทนการแคปหน้าจอ+อธิบายเป็นคำ ๆ */
@@ -406,7 +413,9 @@
         // "รหัสสินค้า" (เช่น A014) ถูกเพิ่มเป็นคอลัมน์ที่ 9 (index 8) ต่อท้ายชีต Stock — ไม่แทรกกลาง
         // เพื่อไม่ให้ index คอลัมน์เดิม (โดยเฉพาะ "ลิงก์รูป" ที่อ่านที่ val(6)) เปลี่ยนตำแหน่ง
         // ชีตเก่าที่ยังไม่มีคอลัมน์นี้ val(8) จะว่างเปล่า — ไม่พังอะไร แค่การ์ดจะไม่โชว์ป้ายรหัส
-        code: String(val(8) || '').trim()
+        code: String(val(8) || '').trim(),
+        // "แนะนำ" ถูกเพิ่มเป็นคอลัมน์ที่ 10 (index 9) ต่อท้ายอีกที — TRUE ถ้าแอดมินติดดาวแนะนำสินค้าชิ้นนี้
+        featured: String(val(9) || '').trim().toUpperCase() === 'TRUE'
       };
     }).filter(function (r) { return r.name; });
 
@@ -418,7 +427,7 @@
     rows.forEach(function (r) {
       var key = r.name + '|' + r.variant;
       if (!map[key]) {
-        map[key] = { name: r.name, variant: r.variant, qty: 0, threshold: r.threshold, photoUrl: r.photoUrl, minPrice: null, maxPrice: null, code: r.code };
+        map[key] = { name: r.name, variant: r.variant, qty: 0, threshold: r.threshold, photoUrl: r.photoUrl, minPrice: null, maxPrice: null, code: r.code, featured: false };
         order.push(key);
       }
       map[key].qty += r.qty;
@@ -426,6 +435,8 @@
       // ชื่อ+ชนิดเดียวกันได้รหัสเดียวกันเสมออยู่แล้ว (ดู ensureProductCode ในแอปจัดการร้าน) แต่เผื่อไว้ —
       // ถ้าแถวแรกที่เจอดันไม่มีรหัส (ของเก่าก่อนอัปเดต) ก็ยังรับรหัสจากแถวถัดไปได้
       if (!map[key].code && r.code) map[key].code = r.code;
+      // ติดดาวแนะนำจากไอดีไหนก็ได้ (ถือว่าสินค้าตัวนี้ "แนะนำ" ทันทีที่มีอย่างน้อย 1 ไอดีติดดาวไว้)
+      if (r.featured) map[key].featured = true;
       if (r.price > 0) {
         if (map[key].minPrice === null || r.price < map[key].minPrice) map[key].minPrice = r.price;
         if (map[key].maxPrice === null || r.price > map[key].maxPrice) map[key].maxPrice = r.price;
@@ -493,6 +504,11 @@
     });
     filtered = filtered.slice().sort(function (a, b) {
       // สินค้าหมด (qty <= 0) ให้ขึ้นก่อนเสมอ ไม่ว่าจะเรียงด้วยโหมดไหน
+      // สินค้าที่แอดมินติดดาว "แนะนำ" ให้ขึ้นบนสุดเสมอ ไม่ว่าจะมี/หมดสต๊อก หรือเรียงด้วยโหมดไหนก็ตาม
+      var aFeatured = !!a.featured, bFeatured = !!b.featured;
+      if (aFeatured !== bFeatured) return aFeatured ? -1 : 1;
+
+      // ภายในกลุ่มแนะนำ/ไม่แนะนำเดียวกัน — สินค้าหมด (qty <= 0) ให้ขึ้นก่อนเสมอ ไม่ว่าจะเรียงด้วยโหมดไหน
       var aOut = a.qty <= 0, bOut = b.qty <= 0;
       if (aOut !== bOut) return aOut ? -1 : 1;
 
@@ -565,6 +581,7 @@
       '<div class="card' + (isOut ? ' out' : '') + '" data-key="' + escapeAttr(key) + '">' +
         '<div class="thumb' + (thumb ? '' : ' empty') + '">' +
           (it.variant ? '<span class="variant-pill">' + escapeHtml(it.variant) + '</span>' : '') +
+          (it.featured ? '<span class="featured-pill">\u2605 แนะนำ</span>' : '') +
           thumb +
           (isOut ? '<span class="stamp-out small">หมด</span>' : '') +
         '</div>' +
@@ -598,6 +615,7 @@
         '<div class="modal-sheet" role="dialog" aria-modal="true">' +
           '<div class="modal-photo-wrap' + (photo ? '' : ' empty') + '">' +
             '<button class="modal-close" id="modalClose" aria-label="ปิด">&#10005;</button>' +
+            (it.featured ? '<span class="featured-pill">\u2605 แนะนำ</span>' : '') +
             photo +
             (isOut ? '<span class="stamp-out">หมด</span>' : '') +
           '</div>' +
