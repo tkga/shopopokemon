@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import {
   Trash2,
+  Star,
 } from "lucide-react";
 import { genId, clamp0, uniquePokemonNames, variantLabel, findMatchingStock, lookupProductCode, STOCK_PHOTO_SIZE_CHOICES } from "../utils.js";
 import Modal from "./Modal.jsx";
@@ -8,7 +9,7 @@ import VariantChips from "./VariantChips.jsx";
 import ProofImagePicker from "./ProofImagePicker.jsx";
 import StockMovementHistory from "./StockMovementHistory.jsx";
 
-export default function StockModal({ mode, item, data, onClose, onSave, onDelete }) {
+export default function StockModal({ mode, item, data, onClose, onSave, onDelete, isFeatured, onToggleFeatured }) {
   const [form, setForm] = useState(item || { id: genId(), name: "", variants: ["normal"], quantity: 1, lowStockThreshold: 2, photoDataUrl: "", price: 0 });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [dismissedKey, setDismissedKey] = useState(null);
@@ -102,6 +103,17 @@ export default function StockModal({ mode, item, data, onClose, onSave, onDelete
           ราคานี้จะถูกอัปเดตอัตโนมัติทุกครั้งที่ขายสินค้าชิ้นนี้ผ่านหน้าเพิ่มออเดอร์ด้วย
         </div>
       </div>
+      {mode === "edit" && item?.id && onToggleFeatured && (
+        <button
+          type="button"
+          className={"pgs-btn " + (isFeatured ? "pgs-btn-primary" : "pgs-btn-outline")}
+          style={{ width: "100%", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          onClick={onToggleFeatured}
+        >
+          <Star size={14} fill={isFeatured ? "currentColor" : "none"} />
+          {isFeatured ? "เป็นสินค้าแนะนำอยู่ (กดเพื่อยกเลิก)" : "ตั้งเป็นสินค้าแนะนำ"}
+        </button>
+      )}
       <button
         className="pgs-btn pgs-btn-primary" style={{ width: "100%", marginBottom: onDelete ? 8 : 0 }}
         disabled={!form.name}

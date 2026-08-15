@@ -5,6 +5,7 @@ import {
   Settings as SettingsIcon,
   BarChart3,
   Trash2,
+  Star,
 } from "lucide-react";
 
 export default function MoreSheet({ onClose, go }) {
@@ -13,6 +14,7 @@ export default function MoreSheet({ onClose, go }) {
   const items = [
     { id: "finance", label: "การเงิน", icon: Wallet, desc: "รายรับ-รายจ่ายทั้งหมด" },
     { id: "reports", label: "รายงาน", icon: BarChart3, desc: "สรุปผลประกอบการ" },
+    { id: "featured", label: "สินค้าแนะนำ", icon: Star, desc: "เลือก/จัดลำดับสินค้าที่จะโชว์ก่อนในหน้าร้าน" },
     { id: "settings", label: "ตั้งค่า", icon: SettingsIcon, desc: "ร้าน, Backup, Export" },
     { id: "trash", label: "ถังขยะ", icon: Trash2, desc: "กู้คืน / ลบถาวรรายการที่ลบไป" },
   ];
