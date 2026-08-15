@@ -13,7 +13,7 @@ import { idbStorage, migrateFromLocalStorage } from "./idb.js";
 const storage = idbStorage;
 import { requestAccessToken, disconnectGoogle, fetchGoogleProfile, ensureSpreadsheet, ensureDriveFolder, syncAll } from "./googleSync.js";
 import { STORAGE_KEY, ORDER_TYPES, PAYMENT_STATUS, TRADE_STATUS, HIRE_STATUS, INVEST_TYPES, POKEMON_VARIANTS, HIRE_MODES } from "./constants.js";
-import { emptyData, genId, orderCodeFromCounter, todayStr, daysBetween, clamp0, applyAppIcon, orderBalance, migrateData, adjustStock, updateStockPrice, pushTrash, pushStockMovement, ensureProductCode } from "./utils.js";
+import { emptyData, genId, orderCodeFromCounter, todayStr, daysBetween, clamp0, applyAppIcon, orderBalance, migrateData, adjustStock, updateStockPrice, pushTrash, pushStockMovement, ensureProductCode, toggleFeatured, applyFeaturedOrder } from "./utils.js";
 import GlobalStyle from "./GlobalStyle.jsx";
 import Modal from "./components/Modal.jsx";
 import LockScreen from "./components/LockScreen.jsx";
@@ -34,6 +34,7 @@ import AccountModal from "./components/AccountModal.jsx";
 import AccountDetail from "./components/AccountDetail.jsx";
 import StockModal from "./components/StockModal.jsx";
 import CodeSearchModal from "./components/CodeSearchModal.jsx";
+import FeaturedModal from "./components/FeaturedModal.jsx";
 import FinanceTab from "./components/FinanceTab.jsx";
 import TxModal from "./components/TxModal.jsx";
 import TrashModal from "./components/TrashModal.jsx";
@@ -519,6 +520,14 @@ export default function App() {
     });
     showToast("ย้ายสต๊อกไปถังขยะแล้ว (กู้คืนได้ในตั้งค่า)");
   }
+  // สลับสถานะ "สินค้าแนะนำ" ของสต๊อกชิ้นหนึ่ง (เปิด/ปิด) — ทำงานทันที ไม่ต้องรอกดบันทึกฟอร์มสต๊อก
+  function toggleFeaturedStock(stockId) {
+    setData(d => ({ ...d, gameAccounts: toggleFeatured(d.gameAccounts, stockId) }));
+  }
+  // จัดลำดับสินค้าแนะนำใหม่ทั้งชุด (จากการลากในเมนู "สินค้าแนะนำ") — orderedStockIds คือลำดับใหม่ทั้งหมด
+  function reorderFeatured(orderedStockIds) {
+    setData(d => ({ ...d, gameAccounts: applyFeaturedOrder(d.gameAccounts, orderedStockIds) }));
+  }
   // ---------- trash bin: restore / permanently delete ----------
   function restoreFromTrash(trashId) {
     setData(d => {
@@ -740,6 +749,12 @@ export default function App() {
     );
   }
 
+  // สต๊อกชิ้นที่กำลังเปิดอยู่ใน StockModal อ่านสด ๆ จาก data (ไม่ใช่ snapshot ตอนเปิด modal) — ใช้เช็ค
+  // สถานะ "แนะนำ" ล่าสุดให้ปุ่มใน StockModal อัปเดตทันทีหลังกด toggle โดยไม่ต้องปิด-เปิด modal ใหม่
+  const stockModalLiveItem = modal?.type === "stock" && modal.mode === "edit" && modal.item
+    ? data.gameAccounts.find(a => a.id === modal.accountId)?.stock?.find(s => s.id === modal.item.id)
+    : null;
+
   return (
     <div className="pgs-root">
       <GlobalStyle />
@@ -772,6 +787,8 @@ export default function App() {
             // "ถังขยะ" ไม่ใช่แท็บ (ไม่มี tab === "trash" ใน render ด้านบน) แต่เป็น modal เดียวกับที่
             // SettingsTab เปิดผ่าน openTrash — เลยจัดการเป็นกรณีพิเศษตรงนี้แทนการ setTab
             if (t === "trash") { setModal({ type: "trash" }); return; }
+            // "สินค้าแนะนำ" ก็ไม่ใช่แท็บเหมือนกัน (จัดการข้ามทุกไอดี) เลยเปิดเป็น modal แบบเดียวกับถังขยะ
+            if (t === "featured") { setModal({ type: "featured" }); return; }
             navigateTab(t);
           }}
         />
@@ -847,6 +864,8 @@ export default function App() {
           onClose={() => setModal(null)}
           onSave={(item) => { saveStock(modal.accountId, item); setModal(null); }}
           onDelete={modal.mode === "edit" ? () => { deleteStock(modal.accountId, modal.item.id); setModal(null); } : null}
+          isFeatured={!!(stockModalLiveItem && stockModalLiveItem.featuredOrder != null)}
+          onToggleFeatured={stockModalLiveItem ? () => toggleFeaturedStock(stockModalLiveItem.id) : null}
         />
       )}
       {modal?.type === "codesearch" && (
@@ -854,6 +873,14 @@ export default function App() {
           data={data}
           onClose={() => setModal(null)}
           onOpenStock={(account, item) => setModal({ type: "stock", mode: "edit", item, accountId: account.id })}
+        />
+      )}
+      {modal?.type === "featured" && (
+        <FeaturedModal
+          data={data}
+          onClose={() => setModal(null)}
+          onToggleFeatured={toggleFeaturedStock}
+          onReorder={reorderFeatured}
         />
       )}
       {modal?.type === "customer" && (

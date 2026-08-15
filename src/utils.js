@@ -297,7 +297,7 @@ export function migrateData(parsed) {
   d.gameAccounts = (d.gameAccounts || []).map(a => ({
     ...a,
     // productCode: "" สำหรับสต๊อกเก่าที่เพิ่มไว้ก่อนมีระบบรหัสสินค้า — เติมรหัสจริงให้ทันทีด้านล่าง
-    stock: (a.stock || []).map(s => ({ lowStockThreshold: 2, variants: ["normal"], photoDataUrl: "", price: 0, productCode: "", ...s })),
+    stock: (a.stock || []).map(s => ({ lowStockThreshold: 2, variants: ["normal"], photoDataUrl: "", price: 0, productCode: "", featuredOrder: null, ...s })),
   }));
   // เติมรหัสสินค้าให้สต๊อกเก่าที่ยังไม่มีรหัส (ของก่อนมีระบบรหัสสินค้า) ทันทีตอนโหลดข้อมูล — ไม่ต้องรอ
   // ให้ผู้ใช้แก้ไข/บันทึกทีละชิ้นก่อนถึงจะค้นหาด้วยรหัสเจอ (สินค้าชื่อ+ประเภทเดียวกันได้รหัสเดียวกันเสมอ)
@@ -390,6 +390,41 @@ export function genVariantKey(label, existingKeys) {
   let i = 2;
   while ((existingKeys || []).includes(key)) key = `${base}_${i++}`;
   return key;
+}
+
+// ---------- สินค้าแนะนำ (โชว์ก่อนในหน้า catalog ของลูกค้า) ----------
+// เก็บผ่าน field "featuredOrder" ในตัวสต๊อกแต่ละชิ้น: null/undefined = ไม่แนะนำ, ตัวเลข = ลำดับที่โชว์
+// (น้อยกว่า = ขึ้นก่อน) ผูกกับ "หน่วยสต๊อกชิ้นนี้โดยเฉพาะ" (ไม่เหมือนรหัสสินค้าที่ผูกกับชื่อ+ประเภท) เพราะ
+// สินค้าแนะนำมักตั้งใจเลือกจากไอดีใดไอดีหนึ่งที่มีของพร้อมขายจริง ไม่ใช่ทุกไอดีที่มีชื่อ+ประเภทเดียวกัน
+
+// รวมรายการสต๊อกที่ถูกตั้ง "แนะนำ" จากทุกไอดี เรียงตามลำดับที่ตั้งไว้ (featuredOrder น้อย = ขึ้นก่อน)
+export function featuredStockList(data) {
+  const list = [];
+  (data.gameAccounts || []).forEach((a) => (a.stock || []).forEach((s) => {
+    if (s.featuredOrder != null) list.push({ account: a, item: s });
+  }));
+  return list.sort((x, y) => (x.item.featuredOrder ?? 0) - (y.item.featuredOrder ?? 0));
+}
+
+// เขียน featuredOrder (0,1,2,...) ทับลง gameAccounts ตามลำดับ id ที่ส่งมาใน orderedStockIds
+// (ชิ้นไหนไม่อยู่ในลิสต์นี้ = ไม่แนะนำ -> featuredOrder: null) ใช้ทั้งตอนติ๊กเปิด/ปิดและตอนลากจัดลำดับใหม่
+export function applyFeaturedOrder(gameAccounts, orderedStockIds) {
+  const rank = new Map(orderedStockIds.map((id, i) => [id, i]));
+  return gameAccounts.map((a) => ({
+    ...a,
+    stock: (a.stock || []).map((s) => ({ ...s, featuredOrder: rank.has(s.id) ? rank.get(s.id) : null })),
+  }));
+}
+
+// สลับสถานะ "แนะนำ" ของสต๊อกชิ้นหนึ่ง — เปิด: ต่อท้ายลำดับแนะนำปัจจุบัน (ล่าสุด),
+// ปิด: เอาออกแล้ว "อัดลำดับ" ที่เหลือใหม่ให้ต่อเนื่องไม่มีช่องว่าง
+export function toggleFeatured(gameAccounts, stockId) {
+  const current = featuredStockList({ gameAccounts });
+  const already = current.some((x) => x.item.id === stockId);
+  const nextIds = already
+    ? current.filter((x) => x.item.id !== stockId).map((x) => x.item.id)
+    : [...current.map((x) => x.item.id), stockId];
+  return applyFeaturedOrder(gameAccounts, nextIds);
 }
 
 export function adjustStock(gameAccounts, accountId, stockItemId, delta) {
