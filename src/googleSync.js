@@ -92,7 +92,7 @@ export async function fetchGoogleProfile(token) {
 }
 
 const SHEETS = {
-  orders: { title: "Orders", headers: ["วันที่สร้าง", "เลขออเดอร์", "ประเภท", "ลูกค้า", "ไอดีเกม", "รายละเอียด", "ราคา", "ชำระแล้ว", "สถานะชำระ", "สถานะเทรด/งาน", "ยกเลิก?", "รูปสลิป/รูปงาน"] },
+  orders: { title: "Orders", headers: ["วันที่สร้าง", "เลขออเดอร์", "ประเภท", "ลูกค้า", "ไอดีเกม", "รายละเอียด", "ราคา", "ชำระแล้ว", "สถานะชำระ", "สถานะเทรด/งาน", "ยกเลิก?", "รูปสลิป/รูปงาน", "รหัสสินค้า"] },
   customers: { title: "Customers", headers: ["ชื่อในเกม", "ไอดีในเกมทั้งหมด", "Facebook", "หมายเหตุ", "ยอดใช้จ่ายสะสม"] },
   // Compact — one row per account, so this stays short even when accounts have hundreds of products.
   accounts: { title: "Accounts", headers: ["ชื่อไอดี", "จำนวนชนิดสินค้า (SKU)", "จำนวนคงเหลือรวม", "ลงทุนสะสม", "รายรับสะสม"] },
@@ -302,10 +302,14 @@ export async function uploadPendingStockImages(token, folderId, gameAccounts, on
   return out;
 }
 
-function orderRow(o, custName, accName) {
+function orderRow(o, custName, codeOf) {
   const desc = o.type === "sell_pokemon"
     ? `${o.pokemonName || ""} x${o.quantity || 1}`
     : `${o.hireUsed || 0}/${o.hireTotal || 0} รอบ`;
+  // "รหัสสินค้า" ที่ถูกขายในออเดอร์นี้ (ต่อท้ายเป็นคอลัมน์สุดท้าย ไม่แทรกกลาง เพื่อไม่ให้ index
+  // คอลัมน์เดิมเปลี่ยนตำแหน่ง) — มีเฉพาะออเดอร์ประเภทขาย (sell_pokemon) ที่ยังอ้างอิงถึงสต๊อกชิ้นนั้นอยู่
+  // (ผูกผ่าน stockItemId); ออเดอร์จ้างตี/เชิญตีหรือสต๊อกที่ถูกลบไปแล้วจะเป็นค่าว่าง
+  const productCode = o.type === "sell_pokemon" ? (codeOf(o.stockItemId) || "") : "";
   return [
     (o.createdAt || "").slice(0, 10),
     o.code || o.id,
@@ -319,6 +323,7 @@ function orderRow(o, custName, accName) {
     o.tradeStatus || o.hireStatus || "",
     o.cancelled ? "ยกเลิก" : "",
     o.driveFileId ? driveImageFormula(o.driveFileId) : "",
+    productCode,
   ];
 }
 
@@ -471,8 +476,14 @@ export async function syncAll({ token, spreadsheetId, folderId, data, onStatus }
   onStatus?.("กำลังตรวจสอบโครงสร้างตาราง...");
   const sheetIdMap = await ensureSheetsAndHeaders(token, spreadsheetId);
 
+  // แผนที่ stockItemId -> รหัสสินค้า ใช้แปะรหัสสินค้าที่ถูกขายไว้ในแต่ละแถวของชีต Orders
+  // (สินค้าที่ถูกลบออกจากสต๊อกไปแล้วจะไม่มีใน map นี้ -> ออเดอร์เก่าจะได้ช่องว่างแทน ไม่พังอะไร)
+  const codeMap = {};
+  gameAccounts.forEach((a) => (a.stock || []).forEach((s) => { if (s.id) codeMap[s.id] = s.productCode || ""; }));
+  const codeOf = (stockItemId) => codeMap[stockItemId] || "";
+
   onStatus?.("กำลังเขียนข้อมูลลง Sheets...");
-  const orderRowsData = orders.map((o) => orderRow(o, custName));
+  const orderRowsData = orders.map((o) => orderRow(o, custName, codeOf));
   const customerRows = data.customers.map((c) => customerRow(c, spentOf));
   const accountSummaryRows = gameAccounts.map((a) => accountSummaryRow(a, { ...data, orders }));
   // sorted by Pokémon name (then account name) so every account holding the same product is
