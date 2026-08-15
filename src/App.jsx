@@ -13,7 +13,7 @@ import { idbStorage, migrateFromLocalStorage } from "./idb.js";
 const storage = idbStorage;
 import { requestAccessToken, disconnectGoogle, fetchGoogleProfile, ensureSpreadsheet, ensureDriveFolder, syncAll } from "./googleSync.js";
 import { STORAGE_KEY, ORDER_TYPES, PAYMENT_STATUS, TRADE_STATUS, HIRE_STATUS, INVEST_TYPES, POKEMON_VARIANTS, HIRE_MODES } from "./constants.js";
-import { emptyData, genId, orderCodeFromCounter, todayStr, daysBetween, clamp0, applyAppIcon, orderBalance, migrateData, adjustStock, updateStockPrice, toggleFeaturedStock, pushTrash, pushStockMovement, ensureProductCode } from "./utils.js";
+import { emptyData, genId, orderCodeFromCounter, todayStr, daysBetween, clamp0, applyAppIcon, orderBalance, migrateData, adjustStock, updateStockPrice, pushTrash, pushStockMovement, ensureProductCode } from "./utils.js";
 import GlobalStyle from "./GlobalStyle.jsx";
 import Modal from "./components/Modal.jsx";
 import LockScreen from "./components/LockScreen.jsx";
@@ -519,9 +519,6 @@ export default function App() {
     });
     showToast("ย้ายสต๊อกไปถังขยะแล้ว (กู้คืนได้ในตั้งค่า)");
   }
-  function toggleFeatured(accountId, stockItemId) {
-    setData(d => ({ ...d, gameAccounts: toggleFeaturedStock(d.gameAccounts, accountId, stockItemId) }));
-  }
   // ---------- trash bin: restore / permanently delete ----------
   function restoreFromTrash(trashId) {
     setData(d => {
@@ -940,7 +937,6 @@ export default function App() {
           onDeleteManual={deleteManualTx}
           onAddStock={() => { setModal({ type: "stock", mode: "add", accountId: detail.item.id }); setDetail(null); }}
           onEditStock={(s) => { setModal({ type: "stock", mode: "edit", item: s, accountId: detail.item.id }); setDetail(null); }}
-          onToggleFeatured={(stockId) => toggleFeatured(detail.item.id, stockId)}
         />
       )}
 

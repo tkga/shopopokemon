@@ -297,7 +297,7 @@ export function migrateData(parsed) {
   d.gameAccounts = (d.gameAccounts || []).map(a => ({
     ...a,
     // productCode: "" สำหรับสต๊อกเก่าที่เพิ่มไว้ก่อนมีระบบรหัสสินค้า — เติมรหัสจริงให้ทันทีด้านล่าง
-    stock: (a.stock || []).map(s => ({ lowStockThreshold: 2, variants: ["normal"], photoDataUrl: "", price: 0, productCode: "", featured: false, ...s })),
+    stock: (a.stock || []).map(s => ({ lowStockThreshold: 2, variants: ["normal"], photoDataUrl: "", price: 0, productCode: "", ...s })),
   }));
   // เติมรหัสสินค้าให้สต๊อกเก่าที่ยังไม่มีรหัส (ของก่อนมีระบบรหัสสินค้า) ทันทีตอนโหลดข้อมูล — ไม่ต้องรอ
   // ให้ผู้ใช้แก้ไข/บันทึกทีละชิ้นก่อนถึงจะค้นหาด้วยรหัสเจอ (สินค้าชื่อ+ประเภทเดียวกันได้รหัสเดียวกันเสมอ)
@@ -412,19 +412,6 @@ export function updateStockPrice(gameAccounts, accountId, stockItemId, price) {
     return {
       ...a,
       stock: (a.stock || []).map(s => s.id === stockItemId ? { ...s, price: clamp0(price) } : s),
-    };
-  });
-}
-
-// สลับสถานะ "แนะนำสินค้า" ของ stock item ชิ้นหนึ่ง — สินค้าที่ติดดาวแนะนำจะถูกดันขึ้นอันดับแรก ๆ
-// ในหน้า catalog.html ที่ลูกค้าเห็น (ดู googleSync.js: stockRows() ที่ sync ค่านี้ขึ้นชีต Stock)
-export function toggleFeaturedStock(gameAccounts, accountId, stockItemId) {
-  if (!accountId || !stockItemId) return gameAccounts;
-  return gameAccounts.map(a => {
-    if (a.id !== accountId) return a;
-    return {
-      ...a,
-      stock: (a.stock || []).map(s => s.id === stockItemId ? { ...s, featured: !s.featured } : s),
     };
   });
 }
