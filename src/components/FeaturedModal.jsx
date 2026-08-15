@@ -1,77 +1,102 @@
 import { useState, useRef, useEffect } from "react";
 import { GripVertical, Star, X, Search } from "lucide-react";
 import Modal from "./Modal.jsx";
-import { featuredStockList, variantLabel } from "../utils.js";
+import { featuredProductCodes, variantLabel } from "../utils.js";
 
-// เมนู "สินค้าแนะนำ" — เลือกสินค้าจากทุกไอดีมาปักไว้ให้ขึ้นก่อนในหน้า catalog ของลูกค้า
-// ลากจัดลำดับได้ (ลากด้วยไอคอน ⠿ ด้านซ้ายของแต่ละแถว) ลำดับจะถูกเขียนกลับเป็น featuredOrder
-// (0,1,2,...) ใน gameAccounts ทันทีที่ปล่อยนิ้ว/เมาส์ — ดู applyFeaturedOrder/toggleFeatured ใน utils.js
+// เมนู "สินค้าแนะนำ" — เลือก "สินค้า" (ผูกกับรหัสสินค้า เช่น A014 ไม่ใช่หน่วยสต๊อกในไอดีใดไอดีหนึ่ง)
+// มาปักไว้ให้ขึ้นก่อนในหน้า catalog ของลูกค้า ของชนิดเดียวกันที่มีหลายไอดีถือครองอยู่จะโชว์ครั้งเดียว
+// (จำนวนรวมทุกไอดี) ลากจัดลำดับได้ (ลากด้วยไอคอน ⠿) — ดู toggleFeatured/applyFeaturedOrder ใน utils.js
+
+// รวมข้อมูลสต๊อกของ "รหัสสินค้า" นี้จากทุกไอดี — จำนวนรวม, รูปตัวแทน, รายชื่อไอดีที่ถือของอยู่
+function aggregateByCode(data, code) {
+  let qty = 0;
+  let photoDataUrl = "";
+  let variantKey = "";
+  let name = "";
+  const accountNames = [];
+  (data.gameAccounts || []).forEach((a) => (a.stock || []).forEach((s) => {
+    if (s.productCode !== code) return;
+    qty += Number(s.quantity) || 0;
+    if (!photoDataUrl && s.photoDataUrl) photoDataUrl = s.photoDataUrl;
+    if (!variantKey) variantKey = s.variants?.[0] || "";
+    if (!name) name = s.name || "";
+    accountNames.push(a.name || "-");
+  }));
+  return { qty, photoDataUrl, variantKey, name, accountNames };
+}
+
 export default function FeaturedModal({ data, onClose, onToggleFeatured, onReorder }) {
-  const featured = featuredStockList(data); // [{account,item}] เรียงตาม featuredOrder แล้ว
+  const featuredCodes = featuredProductCodes(data); // [{key,code,name,variant,featuredOrder}] เรียงแล้ว
 
-  // ลำดับที่กำลังลากอยู่ในเครื่อง (sync จาก props ทุกครั้งที่ data เปลี่ยนจากภายนอก เช่น toggle ปิดจาก modal นี้เอง)
-  const [order, setOrder] = useState(featured.map((f) => f.item.id));
-  useEffect(() => { setOrder(featured.map((f) => f.item.id)); }, [data.gameAccounts]);
+  // ลำดับที่กำลังลากอยู่ในเครื่อง (sync จาก props ทุกครั้งที่ productCodes เปลี่ยนจากภายนอก เช่น toggle ปิดจาก modal นี้เอง)
+  const [order, setOrder] = useState(featuredCodes.map((p) => p.code));
+  useEffect(() => { setOrder(featuredCodes.map((p) => p.code)); }, [data.productCodes]);
 
-  const byId = {};
-  (data.gameAccounts || []).forEach((a) => (a.stock || []).forEach((s) => { byId[s.id] = { account: a, item: s }; }));
-  const orderedFeatured = order.map((id) => byId[id]).filter(Boolean);
+  const orderedFeatured = order
+    .map((code) => ({ code, agg: aggregateByCode(data, code) }))
+    .filter((x) => x.agg.name); // กันรหัสกำพร้าที่ไม่มีสต๊อกเหลือในระบบแล้ว
 
   const rowRefs = useRef({});
-  const dragId = useRef(null);
-  const [draggingId, setDraggingId] = useState(null);
+  const dragCode = useRef(null);
+  const [draggingCode, setDraggingCode] = useState(null);
 
-  function onPointerDown(e, id) {
-    dragId.current = id;
-    setDraggingId(id);
+  function onPointerDown(e, code) {
+    dragCode.current = code;
+    setDraggingCode(code);
     e.currentTarget.setPointerCapture?.(e.pointerId);
   }
   function onPointerMove(e) {
-    if (!dragId.current) return;
+    if (!dragCode.current) return;
     const y = e.clientY;
-    let bestId = null;
+    let bestCode = null;
     let bestDist = Infinity;
-    Object.entries(rowRefs.current).forEach(([id, el]) => {
+    Object.entries(rowRefs.current).forEach(([code, el]) => {
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const mid = rect.top + rect.height / 2;
       const dist = Math.abs(mid - y);
-      if (dist < bestDist) { bestDist = dist; bestId = id; }
+      if (dist < bestDist) { bestDist = dist; bestCode = code; }
     });
-    if (bestId && bestId !== dragId.current) {
+    if (bestCode && bestCode !== dragCode.current) {
       setOrder((prev) => {
-        const from = prev.indexOf(dragId.current);
-        const to = prev.indexOf(bestId);
+        const from = prev.indexOf(dragCode.current);
+        const to = prev.indexOf(bestCode);
         if (from === -1 || to === -1) return prev;
         const next = [...prev];
         next.splice(from, 1);
-        next.splice(to, 0, dragId.current);
+        next.splice(to, 0, dragCode.current);
         return next;
       });
     }
   }
   function onPointerUp() {
-    if (dragId.current) onReorder(order);
-    dragId.current = null;
-    setDraggingId(null);
+    if (dragCode.current) onReorder(order);
+    dragCode.current = null;
+    setDraggingCode(null);
   }
 
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
-  const featuredIdSet = new Set(order);
-  const candidates = [];
-  (data.gameAccounts || []).forEach((a) => (a.stock || []).forEach((s) => {
-    if (featuredIdSet.has(s.id)) return;
-    if (q && !((s.name || "").toLowerCase().includes(q) || (a.name || "").toLowerCase().includes(q) || (s.productCode || "").toLowerCase().includes(q))) return;
-    candidates.push({ account: a, item: s });
-  }));
-  candidates.sort((x, y) => (x.item.name || "").localeCompare(y.item.name || "", "th"));
+  const featuredCodeSet = new Set(order);
+  // สร้างรายชื่อ "รหัสสินค้า" ที่ยังไม่ได้แนะนำ ตรงๆ จาก registry data.productCodes (หนึ่งแถวต่อหนึ่งชนิดสินค้า
+  // อยู่แล้ว) ไม่ไล่จาก gameAccounts.stock — กันไม่ให้ของชนิดเดียวกันที่มีหลายไอดีโผล่ซ้ำหลายแถว
+  const candidates = (data.productCodes || [])
+    .filter((p) => !featuredCodeSet.has(p.code))
+    .map((p) => ({ code: p.code, agg: aggregateByCode(data, p.code) }))
+    .filter((x) => x.agg.name) // ซ่อนรหัสที่ไม่มีสต๊อกเหลือในระบบแล้ว (ของถูกลบทิ้งหมดทุกไอดี)
+    .filter((x) => {
+      if (!q) return true;
+      const hay = (x.agg.name + " " + x.code + " " + x.agg.accountNames.join(" ")).toLowerCase();
+      return hay.includes(q);
+    });
+  candidates.sort((a, b) => a.agg.name.localeCompare(b.agg.name, "th"));
   const showCandidates = q ? candidates : candidates.slice(0, 20);
 
   return (
     <Modal title="สินค้าแนะนำ" onClose={onClose}>
       <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginBottom: 14 }}>
-        สินค้าที่ปักไว้ด้านล่างจะถูกดันขึ้นแสดงก่อนในหน้าร้านของลูกค้า (เฉพาะชิ้นที่ยังมีของ) ตามลำดับที่จัดไว้ — ลาก ⠿ เพื่อสลับลำดับ
+        สินค้าที่ปักไว้ด้านล่างจะถูกดันขึ้นแสดงก่อนในหน้าร้านของลูกค้า (เฉพาะชิ้นที่ยังมีของ) ตามลำดับที่จัดไว้ —
+        ผูกกับรหัสสินค้า ไม่ใช่ไอดีใดไอดีหนึ่ง ถ้ามีของชนิดนี้หลายไอดีจะนับรวมกันเป็นรายการเดียว ลาก ⠿ เพื่อสลับลำดับ
       </div>
 
       {orderedFeatured.length === 0 ? (
@@ -80,40 +105,40 @@ export default function FeaturedModal({ data, onClose, onToggleFeatured, onReord
         </div>
       ) : (
         <div style={{ marginBottom: 18 }} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
-          {orderedFeatured.map(({ account, item }, i) => (
+          {orderedFeatured.map(({ code, agg }, i) => (
             <div
-              key={item.id}
-              ref={(el) => { rowRefs.current[item.id] = el; }}
+              key={code}
+              ref={(el) => { rowRefs.current[code] = el; }}
               className="pgs-card"
               style={{
                 display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", marginBottom: 8,
-                opacity: draggingId === item.id ? 0.55 : 1,
-                borderColor: draggingId === item.id ? "var(--yellow-dim, var(--border))" : undefined,
+                opacity: draggingCode === code ? 0.55 : 1,
+                borderColor: draggingCode === code ? "var(--yellow-dim, var(--border))" : undefined,
               }}
             >
               <div
-                onPointerDown={(e) => onPointerDown(e, item.id)}
+                onPointerDown={(e) => onPointerDown(e, code)}
                 style={{ touchAction: "none", cursor: "grab", color: "var(--muted)", flexShrink: 0, display: "flex", padding: 4 }}
               >
                 <GripVertical size={16} />
               </div>
               <div style={{ width: 22, textAlign: "center", fontSize: 11, color: "var(--muted)", flexShrink: 0 }}>{i + 1}</div>
-              {item.photoDataUrl ? (
-                <img src={item.photoDataUrl} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: "1px solid var(--border)" }} />
+              {agg.photoDataUrl ? (
+                <img src={agg.photoDataUrl} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: "1px solid var(--border)" }} />
               ) : (
                 <div style={{ width: 36, height: 36, borderRadius: 8, background: "var(--surface-2)", flexShrink: 0 }} />
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</div>
+                <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{agg.name}</div>
                 <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {variantLabel(data, item.variants?.[0])} · {account.name}
+                  {variantLabel(data, agg.variantKey)} · {agg.accountNames.join(", ")} · {code}
                 </div>
               </div>
               <button
                 type="button"
                 className="pgs-btn pgs-btn-outline"
                 style={{ padding: 8, flexShrink: 0 }}
-                onClick={() => onToggleFeatured(item.id)}
+                onClick={() => onToggleFeatured(code)}
                 title="เอาออกจากรายการแนะนำ"
               >
                 <X size={14} />
@@ -143,20 +168,20 @@ export default function FeaturedModal({ data, onClose, onToggleFeatured, onReord
         </div>
       ) : (
         <div>
-          {showCandidates.map(({ account, item }) => (
-            <div key={item.id} className="pgs-card" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", marginBottom: 8 }}>
-              {item.photoDataUrl ? (
-                <img src={item.photoDataUrl} alt="" style={{ width: 32, height: 32, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: "1px solid var(--border)" }} />
+          {showCandidates.map(({ code, agg }) => (
+            <div key={code} className="pgs-card" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", marginBottom: 8 }}>
+              {agg.photoDataUrl ? (
+                <img src={agg.photoDataUrl} alt="" style={{ width: 32, height: 32, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: "1px solid var(--border)" }} />
               ) : (
                 <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--surface-2)", flexShrink: 0 }} />
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</div>
+                <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{agg.name}</div>
                 <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {variantLabel(data, item.variants?.[0])} · {account.name}{item.productCode ? ` · ${item.productCode}` : ""}
+                  {variantLabel(data, agg.variantKey)} · {agg.accountNames.join(", ")} · {code}
                 </div>
               </div>
-              <button type="button" className="pgs-btn pgs-btn-primary" style={{ padding: "6px 10px", fontSize: 12, flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }} onClick={() => onToggleFeatured(item.id)}>
+              <button type="button" className="pgs-btn pgs-btn-primary" style={{ padding: "6px 10px", fontSize: 12, flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }} onClick={() => onToggleFeatured(code)}>
                 <Star size={12} /> เพิ่ม
               </button>
             </div>
