@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import {
   Trash2,
+  Star,
 } from "lucide-react";
 import { genId, clamp0, uniquePokemonNames, variantLabel, findMatchingStock, lookupProductCode, STOCK_PHOTO_SIZE_CHOICES } from "../utils.js";
 import Modal from "./Modal.jsx";
@@ -9,7 +10,7 @@ import ProofImagePicker from "./ProofImagePicker.jsx";
 import StockMovementHistory from "./StockMovementHistory.jsx";
 
 export default function StockModal({ mode, item, data, onClose, onSave, onDelete }) {
-  const [form, setForm] = useState(item || { id: genId(), name: "", variants: ["normal"], quantity: 1, lowStockThreshold: 2, photoDataUrl: "", price: 0 });
+  const [form, setForm] = useState(item || { id: genId(), name: "", variants: ["normal"], quantity: 1, lowStockThreshold: 2, photoDataUrl: "", price: 0, featured: false });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [dismissedKey, setDismissedKey] = useState(null);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -51,6 +52,15 @@ export default function StockModal({ mode, item, data, onClose, onSave, onDelete
           <span>จะสร้างให้อัตโนมัติหลังบันทึก</span>
         )}
       </div>
+      <button
+        type="button"
+        onClick={() => set("featured", !form.featured)}
+        className={"pgs-chip" + (form.featured ? " active" : "")}
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 14 }}
+      >
+        <Star size={13} fill={form.featured ? "#14151f" : "none"} />
+        {form.featured ? "แนะนำสินค้านี้อยู่ (ขึ้นอันดับแรกในหน้าร้าน)" : "แนะนำสินค้านี้"}
+      </button>
       <div className="pgs-field">
         <label className="pgs-label">รูปสินค้า (ไม่บังคับ — ไว้ให้ลูกค้าดูสินค้าในอนาคต)</label>
         {showSuggestion && (

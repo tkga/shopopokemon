@@ -9,6 +9,7 @@ import {
   Coins,
   AlertTriangle,
   Image as ImageIcon,
+  Star,
 } from "lucide-react";
 import { INVEST_TYPES, POKEMON_VARIANTS } from "../constants.js";
 import { fmtMoney, fmtDate, clamp0 } from "../utils.js";
@@ -16,7 +17,7 @@ import StatCard from "./StatCard.jsx";
 import Modal from "./Modal.jsx";
 import EmptyState from "./EmptyState.jsx";
 
-export default function AccountDetail({ item, data, stats, onClose, onEdit, onDelete, onAddInvestment, onDeleteInvestment, onDeleteManual, onAddStock, onEditStock }) {
+export default function AccountDetail({ item, data, stats, onClose, onEdit, onDelete, onAddInvestment, onDeleteInvestment, onDeleteManual, onAddStock, onEditStock, onToggleFeatured }) {
   const invested = stats.investByAccount[item.id] || 0;
   // นับยอดที่ "ชำระเข้ามาแล้วจริง" ทันทีที่มีออเดอร์ ไม่ต้องรอกดเสร็จสิ้น/เทรดแล้วก่อน — ชำระเต็มนับเต็มราคา,
   // ชำระบางส่วนนับเฉพาะยอดที่ชำระมาแล้ว (paidAmount) แก้บั๊กเดิมที่นับเฉพาะ paymentStatus === "paid" เท่านั้น
@@ -50,7 +51,15 @@ export default function AccountDetail({ item, data, stats, onClose, onEdit, onDe
       {stock.length === 0 ? <EmptyState text="ยังไม่มีสต๊อก" /> : stock.map(s => {
         const low = clamp0(s.quantity) <= (s.lowStockThreshold ?? 2);
         return (
-          <div key={s.id} className="pgs-row" style={{ padding: "8px 0", borderBottom: "1px solid var(--border)", fontSize: 12, cursor: "pointer" }} onClick={() => onEditStock(s)}>
+          <div
+            key={s.id}
+            className="pgs-row"
+            style={{
+              padding: "8px 0", borderBottom: "1px solid var(--border)", fontSize: 12, cursor: "pointer",
+              background: s.featured ? "rgba(255,203,5,0.06)" : "transparent",
+            }}
+            onClick={() => onEditStock(s)}
+          >
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {s.photoDataUrl ? (
                 <img src={s.photoDataUrl} alt={s.name} style={{ width: 34, height: 34, borderRadius: 8, objectFit: "cover", border: "1px solid var(--border)", flexShrink: 0 }} />
@@ -70,6 +79,13 @@ export default function AccountDetail({ item, data, stats, onClose, onEdit, onDe
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               {low && <AlertTriangle size={13} color="var(--red)" />}
               <span className="pgs-mono" style={{ fontWeight: 700, color: low ? "var(--red)" : "var(--text)" }}>{s.quantity}</span>
+              <button
+                title={s.featured ? "เลิกแนะนำสินค้านี้" : "แนะนำสินค้านี้ (ขึ้นอันดับแรกในหน้าร้าน)"}
+                onClick={(e) => { e.stopPropagation(); onToggleFeatured?.(s.id); }}
+                style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}
+              >
+                <Star size={15} color={s.featured ? "var(--yellow)" : "var(--muted)"} fill={s.featured ? "var(--yellow)" : "none"} />
+              </button>
             </div>
           </div>
         );
