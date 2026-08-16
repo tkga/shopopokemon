@@ -7,6 +7,22 @@ import { fmtMoney } from "../utils.js";
 import EmptyState from "./EmptyState.jsx";
 import SubHeader from "./SubHeader.jsx";
 
+// ปิดบังชื่อลูกค้าสำหรับการ์ด Top 3 เท่านั้น (ลิสต์ด้านล่างยังโชว์ชื่อเต็มตามปกติ)
+// กติกา: เอาเฉพาะคำแรกของชื่อ โชว์ตัวอักษรตัวแรก + *** + ตัวอักษรตัวสุดท้าย
+// เช่น "กานต์ ชัยรัตน์" -> "ก***์" (ตัดนามสกุลออกไปเลย)
+function maskName(fullName) {
+  const first = (fullName || "").trim().split(/\s+/)[0] || "";
+  if (first.length <= 2) return first ? first[0] + "*".repeat(Math.max(first.length - 1, 1)) : "";
+  return first[0] + "***" + first[first.length - 1];
+}
+
+const PODIUM_ORDER = [2, 1, 3]; // เรียงตำแหน่งที่วางบนจอ: ที่ 2 (ซ้าย), ที่ 1 (กลาง), ที่ 3 (ขวา)
+const PODIUM_STYLE = {
+  1: { medal: "🥇", height: 92, nameSize: 13, moneySize: 13, medalSize: 26 },
+  2: { medal: "🥈", height: 74, nameSize: 12, moneySize: 11, medalSize: 20 },
+  3: { medal: "🥉", height: 60, nameSize: 12, moneySize: 11, medalSize: 20 },
+};
+
 export default function CustomersTab({ data, openNew, openEdit, openDetail, back }) {
   const [q, setQ] = useState("");
   const spentOf = (id) => data.orders.filter(o => o.customerId === id && !o.cancelled).reduce((s, o) => {
@@ -14,14 +30,36 @@ export default function CustomersTab({ data, openNew, openEdit, openDetail, back
     if (o.paymentStatus === "partial") return s + (Number(o.paidAmount) || 0);
     return s;
   }, 0);
-  const list = data.customers
-    .filter(c => !q || c.name.toLowerCase().includes(q.toLowerCase()))
+  // เรียงจากยอดซื้อทั้งหมด (ไม่กรองด้วยคำค้นหา) ไว้แยกใช้เป็น Top 3 บนสุด
+  const allSorted = data.customers
     .map(c => ({ ...c, _spent: spentOf(c.id) }))
     .sort((a, b) => b._spent - a._spent);
-  const medal = (i) => i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
+  const top3 = allSorted.slice(0, 3);
+  // ลิสต์ด้านล่างยังกรองด้วยคำค้นหาได้ตามปกติ
+  const list = allSorted.filter(c => !q || c.name.toLowerCase().includes(q.toLowerCase()));
   return (
     <div>
       <SubHeader title="ลูกค้า" back={back} />
+      {!q && top3.length > 0 && (
+        <div className="pgs-card" style={{ marginBottom: 12 }}>
+          <div className="pgs-sectiontitle" style={{ margin: "0 0 10px 2px" }}>ลูกค้าซื้อเยอะสุด</div>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 10 }}>
+            {PODIUM_ORDER.map(rank => {
+              const c = top3[rank - 1];
+              if (!c) return <div key={rank} style={{ flex: 1 }} />;
+              const s = PODIUM_STYLE[rank];
+              return (
+                <div key={c.id} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer" }} onClick={() => openDetail(c)}>
+                  <div style={{ fontSize: s.medalSize }}>{s.medal}</div>
+                  <div style={{ fontWeight: 700, fontSize: s.nameSize, textAlign: "center" }}>{maskName(c.name)}</div>
+                  <div className="pgs-mono" style={{ fontSize: s.moneySize, fontWeight: 700, color: "var(--green)" }}>฿{fmtMoney(c._spent)}</div>
+                  <div style={{ width: "100%", height: s.height, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10 }} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <button className="pgs-btn pgs-btn-primary" style={{ width: "100%", marginBottom: 12 }} onClick={openNew}><Plus size={15} /> เพิ่มลูกค้าใหม่</button>
       <div style={{ position: "relative", marginBottom: 12 }}>
         <Search size={14} color="var(--muted)" style={{ position: "absolute", left: 12, top: 12 }} />
@@ -31,11 +69,7 @@ export default function CustomersTab({ data, openNew, openEdit, openDetail, back
         <div key={c.id} className="pgs-card" style={{ marginBottom: 8, cursor: "pointer" }} onClick={() => openDetail(c)}>
           <div className="pgs-row">
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              {medal(i) ? (
-                <span style={{ fontSize: 18 }}>{medal(i)}</span>
-              ) : (
-                <span className="pgs-mono" style={{ fontSize: 11, color: "var(--muted)", width: 18, textAlign: "center" }}>#{i + 1}</span>
-              )}
+              <span className="pgs-mono" style={{ fontSize: 11, color: "var(--muted)", width: 18, textAlign: "center" }}>#{i + 1}</span>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{c.name}</div>
                 <div style={{ fontSize: 11, color: "var(--muted)" }}>{c.facebook || "ไม่มี Facebook"}</div>
