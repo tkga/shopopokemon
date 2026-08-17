@@ -7,6 +7,37 @@ import { fmtMoney } from "../utils.js";
 import EmptyState from "./EmptyState.jsx";
 import SubHeader from "./SubHeader.jsx";
 
+// ลำดับการวางบนโพเดียม: อันดับ 2 (ซ้าย) - อันดับ 1 (กลาง) - อันดับ 3 (ขวา)
+const PODIUM_ORDER = [2, 1, 3];
+const PODIUM_STYLE = {
+  1: { medal: "🥇", medalSize: 28, nameSize: 13, moneySize: 13, height: 64 },
+  2: { medal: "🥈", medalSize: 22, nameSize: 12, moneySize: 12, height: 46 },
+  3: { medal: "🥉", medalSize: 22, nameSize: 12, moneySize: 12, height: 34 },
+};
+
+// คำนวณยอดซื้อสะสมของลูกค้า 1 คน จากออเดอร์ที่ชำระแล้ว/ชำระบางส่วน (ไม่นับที่ยกเลิก)
+function spentOf(customerId, orders) {
+  return orders
+    .filter(o => o.customerId === customerId && !o.cancelled)
+    .filter(o => ["sell_pokemon", "hire_boss", "hire_invite"].includes(o.type))
+    .reduce((sum, o) => {
+      if (o.paymentStatus === "paid") return sum + (Number(o.price) || 0);
+      if (o.paymentStatus === "partial") return sum + (Number(o.paidAmount) || 0);
+      return sum;
+    }, 0);
+}
+
+// แสดงชื่อเต็มตามปกติบนโพเดียม (ยังไม่มีสเปกการปิดบังชื่อจากต้นฉบับ — ปรับได้ภายหลังถ้าต้องการ)
+const maskName = (name) => name;
+
+export default function CustomersTab({ data, openNew, openEdit, openDetail, back }) {
+  const [q, setQ] = useState("");
+
+  const allSorted = [...data.customers]
+    .map(c => ({ ...c, _spent: spentOf(c.id, data.orders) }))
+    .sort((a, b) => b._spent - a._spent);
+
+  const top3 = allSorted.filter(c => c._spent > 0).slice(0, 3);
 
   // ลิสต์ด้านล่างยังกรองด้วยคำค้นหาได้ตามปกติ
   const list = allSorted.filter(c => !q || c.name.toLowerCase().includes(q.toLowerCase()));
