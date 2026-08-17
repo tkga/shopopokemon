@@ -7,21 +7,6 @@ import { fmtMoney } from "../utils.js";
 import EmptyState from "./EmptyState.jsx";
 import SubHeader from "./SubHeader.jsx";
 
-// ปิดบังชื่อลูกค้าสำหรับการ์ด Top 3 เท่านั้น (ลิสต์ด้านล่างยังโชว์ชื่อเต็มตามปกติ)
-// กติกา: เอาเฉพาะคำแรกของชื่อ โชว์ตัวอักษรตัวแรก + *** + ตัวอักษรตัวสุดท้าย
-// เช่น "กานต์ ชัยรัตน์" -> "ก***์" (ตัดนามสกุลออกไปเลย)
-function maskName(fullName) {
-  const first = (fullName || "").trim().split(/\s+/)[0] || "";
-  if (first.length <= 2) return first ? first[0] + "*".repeat(Math.max(first.length - 1, 1)) : "";
-  return first[0] + "***" + first[first.length - 1];
-}
-
-const PODIUM_ORDER = [2, 1, 3]; // เรียงตำแหน่งที่วางบนจอ: ที่ 2 (ซ้าย), ที่ 1 (กลาง), ที่ 3 (ขวา)
-const PODIUM_STYLE = {
-  1: { medal: "🥇", height: 92, nameSize: 13, moneySize: 13, medalSize: 26 },
-  2: { medal: "🥈", height: 74, nameSize: 12, moneySize: 11, medalSize: 20 },
-  3: { medal: "🥉", height: 60, nameSize: 12, moneySize: 11, medalSize: 20 },
-};
 
 export default function CustomersTab({ data, openNew, openEdit, openDetail, back }) {
   const [q, setQ] = useState("");
