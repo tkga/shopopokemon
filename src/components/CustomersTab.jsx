@@ -8,18 +8,6 @@ import EmptyState from "./EmptyState.jsx";
 import SubHeader from "./SubHeader.jsx";
 
 
-export default function CustomersTab({ data, openNew, openEdit, openDetail, back }) {
-  const [q, setQ] = useState("");
-  const spentOf = (id) => data.orders.filter(o => o.customerId === id && !o.cancelled).reduce((s, o) => {
-    if (o.paymentStatus === "paid") return s + (Number(o.price) || 0);
-    if (o.paymentStatus === "partial") return s + (Number(o.paidAmount) || 0);
-    return s;
-  }, 0);
-  // เรียงจากยอดซื้อทั้งหมด (ไม่กรองด้วยคำค้นหา) ไว้แยกใช้เป็น Top 3 บนสุด
-  const allSorted = data.customers
-    .map(c => ({ ...c, _spent: spentOf(c.id) }))
-    .sort((a, b) => b._spent - a._spent);
-  const top3 = allSorted.slice(0, 3);
   // ลิสต์ด้านล่างยังกรองด้วยคำค้นหาได้ตามปกติ
   const list = allSorted.filter(c => !q || c.name.toLowerCase().includes(q.toLowerCase()));
   return (
