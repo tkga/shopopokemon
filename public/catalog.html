@@ -199,6 +199,21 @@
   .card { cursor: pointer; transition: border-color 0.15s; }
   .card:hover { border-color: var(--yellow-dim); }
 
+  /* การ์ดลูกค้าซื้อเยอะสุด (Top 3) — ชื่อถูกปิดบังบางส่วนเสมอเพราะหน้านี้เปิดสาธารณะ */
+  .top-customers-card {
+    max-width: 1080px; margin: 16px auto 0; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px;
+  }
+  .top-customers-title {
+    font-family: 'Chonburi', sans-serif; font-size: 14px; color: var(--yellow); margin: 0 0 14px; letter-spacing: 0.3px;
+  }
+  .podium-row { display: flex; align-items: flex-end; justify-content: center; gap: 10px; }
+  .podium-col { flex: 1; max-width: 140px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .podium-medal { line-height: 1; }
+  .podium-name { font-weight: 500; text-align: center; color: var(--text); }
+  .podium-amount { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--green); }
+  .podium-bar { width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px 10px 0 0; }
+
   .modal-backdrop {
     position: fixed; inset: 0; background: rgba(6,10,18,0.82); z-index: 50;
     display: flex; align-items: flex-end; justify-content: center;
@@ -272,6 +287,7 @@
 </header>
 
 <div class="wrap">
+  <div id="topCustomers"></div>
   <div id="root"></div>
 </div>
 
@@ -372,6 +388,70 @@
 
   var trendingMap = {};
 
+  // ปิดบังชื่อลูกค้าสำหรับการ์ด Top 3 — หน้านี้เปิดสาธารณะให้ใครก็ตามที่มีลิงก์เข้าดูได้
+  // จึงห้ามโชว์ชื่อเต็มเด็ดขาด (ต่างจากแอปจัดการร้านที่ปิดบังเฉพาะการ์ด Top 3 แต่ลิสต์ล่างโชว์เต็ม)
+  // กติกาเดียวกับแอป: เอาเฉพาะคำแรกของชื่อ โชว์ตัวอักษรตัวแรก + *** + ตัวอักษรตัวสุดท้าย
+  function maskName(fullName) {
+    var first = String(fullName || '').trim().split(/\s+/)[0] || '';
+    if (first.length <= 2) return first ? first[0] + Array(Math.max(first.length - 1, 1) + 1).join('*') : '';
+    return first[0] + '***' + first[first.length - 1];
+  }
+
+  var PODIUM_ORDER = [2, 1, 3]; // ที่ 2 (ซ้าย), ที่ 1 (กลาง), ที่ 3 (ขวา)
+  var PODIUM_STYLE = {
+    1: { medal: '&#129351;', height: 92, medalSize: 26 },
+    2: { medal: '&#129352;', height: 74, medalSize: 20 },
+    3: { medal: '&#129353;', height: 60, medalSize: 20 }
+  };
+
+  // จัดอันดับลูกค้าซื้อเยอะสุดจากชีต Orders ตัวเดียวกับที่ใช้คำนวณ "มาแรง" ด้านบน (ไม่ต้องยิงคำขอเพิ่ม)
+  // ยอดซื้อคิดแบบเดียวกับแอปจัดการร้าน (ดู spentOf ใน CustomersTab.jsx): ไม่นับออเดอร์ที่ยกเลิก,
+  // สถานะ "paid" นับเต็มราคา (คอลัมน์ 7), สถานะ "partial" นับเฉพาะยอดที่ชำระแล้ว (คอลัมน์ 8),
+  // นับรวมทุกประเภทออเดอร์ (ไม่ใช่แค่ sell_pokemon) ตรงกับพฤติกรรมในแอป
+  function parseTopCustomers(table) {
+    var totals = {};
+    if (!table || !table.rows) return [];
+    table.rows.forEach(function (r) {
+      var c = r.c || [];
+      var val = function (i) { return c[i] && (c[i].v !== null && c[i].v !== undefined) ? c[i].v : ''; };
+      var cancelled = String(val(10) || '').trim();
+      if (cancelled) return;
+      var name = String(val(3) || '').trim();
+      if (!name) return;
+      var status = String(val(8) || '').trim();
+      var spent = status === 'paid' ? (Number(val(6)) || 0) : (status === 'partial' ? (Number(val(7)) || 0) : 0);
+      totals[name] = (totals[name] || 0) + spent;
+    });
+    return Object.keys(totals)
+      .map(function (name) { return { name: name, spent: totals[name] }; })
+      .filter(function (x) { return x.spent > 0; })
+      .sort(function (a, b) { return b.spent - a.spent; })
+      .slice(0, 3);
+  }
+
+  function renderTopCustomers(top3) {
+    var el = document.getElementById('topCustomers');
+    if (!top3.length) { el.innerHTML = ''; return; }
+    var cols = PODIUM_ORDER.map(function (rank) {
+      var c = top3[rank - 1];
+      if (!c) return '<div class="podium-col"></div>';
+      var s = PODIUM_STYLE[rank];
+      return (
+        '<div class="podium-col">' +
+          '<div class="podium-medal" style="font-size:' + s.medalSize + 'px">' + s.medal + '</div>' +
+          '<div class="podium-name" style="font-size:' + (rank === 1 ? 13 : 12) + 'px">' + escapeHtml(maskName(c.name)) + '</div>' +
+          '<div class="podium-amount" style="font-size:' + (rank === 1 ? 13 : 11) + 'px">&#3647;' + fmtNumber(c.spent) + '</div>' +
+          '<div class="podium-bar" style="height:' + s.height + 'px"></div>' +
+        '</div>'
+      );
+    }).join('');
+    el.innerHTML =
+      '<div class="top-customers-card">' +
+        '<div class="top-customers-title">ลูกค้าซื้อเยอะสุด</div>' +
+        '<div class="podium-row">' + cols + '</div>' +
+      '</div>';
+  }
+
   function loadCatalog(id) {
     renderLoading();
     Promise.all([
@@ -386,11 +466,12 @@
       }
       try {
         var rows = parseTable(stockResp.table);
-        // ชีต Orders โหลดไม่สำเร็จก็ไม่เป็นไร — แค่ "มาแรง" จะเรียงตามชื่อแทนแทนการนับยอดขาย
+        // ชีต Orders โหลดไม่สำเร็จก็ไม่เป็นไร — แค่ "มาแรง" จะเรียงตามชื่อแทนแทนการนับยอดขาย และการ์ด Top 3 จะไม่โชว์
         trendingMap = ordersResp && ordersResp.table ? parseTrendingMap(ordersResp.table) : {};
         // แปะจำนวน "ขายไปแล้ว" ต่อชิ้นสินค้า จากยอดขายสะสมในชีต Orders อิงตามรหัสสินค้า
         // (สินค้าที่ยังไม่มีรหัส — กรณีชีตเก่ามาก ๆ — จะไม่มียอดขายโชว์)
         rows.forEach(function (r) { r.sold = r.code ? (trendingMap[r.code.toUpperCase()] || 0) : 0; });
+        renderTopCustomers(ordersResp && ordersResp.table ? parseTopCustomers(ordersResp.table) : []);
         renderCatalog(rows);
       } catch (e) {
         renderError('อ่านข้อมูลไม่สำเร็จ', String(e && e.message || e));
@@ -471,6 +552,7 @@
     document.getElementById('root').innerHTML =
       '<div class="loading-state"><div class="scan"></div>กำลังโหลดรายการสินค้า...</div>';
     document.getElementById('statusLine').textContent = '';
+    document.getElementById('topCustomers').innerHTML = '';
   }
 
   function renderError(title, detail) {
