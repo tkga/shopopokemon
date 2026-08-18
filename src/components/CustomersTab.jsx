@@ -8,13 +8,13 @@ import EmptyState from "./EmptyState.jsx";
 import SubHeader from "./SubHeader.jsx";
 
 // คำนวณยอดซื้อสะสมของลูกค้า 1 คน จากออเดอร์ที่ชำระแล้ว/ชำระบางส่วน (ไม่นับที่ยกเลิก)
+// นับราคาสินค้าเต็มจำนวนของออเดอร์ ไม่ว่าจะชำระครบหรือชำระบางส่วน (ซื้อเท่าไหร่ แสดงเท่านั้น)
 function spentOf(customerId, orders) {
   return orders
     .filter(o => o.customerId === customerId && !o.cancelled)
     .filter(o => ["sell_pokemon", "hire_boss", "hire_invite"].includes(o.type))
     .reduce((sum, o) => {
-      if (o.paymentStatus === "paid") return sum + (Number(o.price) || 0);
-      if (o.paymentStatus === "partial") return sum + (Number(o.paidAmount) || 0);
+      if (o.paymentStatus === "paid" || o.paymentStatus === "partial") return sum + (Number(o.price) || 0);
       return sum;
     }, 0);
 }
