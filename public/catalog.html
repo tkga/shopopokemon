@@ -423,6 +423,19 @@
   // นับรวมทุกประเภทออเดอร์ (ไม่ใช่แค่ sell_pokemon) ตรงกับพฤติกรรมในแอป
   // monthPrefix: ถ้าใส่ (รูปแบบ "YYYY-MM") จะนับเฉพาะออเดอร์ที่วันที่ (คอลัมน์ 0, "YYYY-MM-DD") ขึ้นต้นตรงกัน
   // เพื่อทำยอด "รายเดือน" — ถ้าไม่ใส่ (null/undefined) จะนับรวมทุกออเดอร์ตั้งแต่เริ่มร้าน ("ตลอดเวลา")
+  // ดึง "YYYY-MM" จากคอลัมน์วันที่ของแถวออเดอร์ — รองรับ 2 รูปแบบ:
+  // 1) ข้อความธรรมดา "2026-08-15" (ตามที่แอปเขียนลงชีตตอน sync ผ่าน orderRow() ใน googleSync.js)
+  // 2) "Date(2026,7,15)" — Google Sheets มักแปลงคอลัมน์ที่ข้อความหน้าตาเป็นวันที่ให้กลายเป็นชนิด Date
+  //    จริงอัตโนมัติ (ขึ้นกับรูปแบบเซลล์) ซึ่ง Google Visualization API จะส่งค่ากลับมาเป็น literal
+  //    แบบนี้แทน (เดือนเป็น 0-based ต้อง +1) — ถ้าไม่รองรับรูปแบบนี้ ตัวกรองรายเดือนจะไม่ match อะไรเลย
+  function monthPrefixOf(raw) {
+    var s = String(raw || '').trim();
+    var m = s.match(/^Date\((\d+),(\d+),(\d+)/);
+    if (m) return m[1] + '-' + String(Number(m[2]) + 1).padStart(2, '0');
+    if (/^\d{4}-\d{2}/.test(s)) return s.slice(0, 7);
+    return '';
+  }
+
   function parseTopCustomers(table, monthPrefix) {
     var totals = {};
     if (!table || !table.rows) return [];
@@ -432,8 +445,7 @@
       var cancelled = String(val(10) || '').trim();
       if (cancelled) return;
       if (monthPrefix) {
-        var dateStr = String(val(0) || '').trim();
-        if (dateStr.slice(0, 7) !== monthPrefix) return;
+        if (monthPrefixOf(val(0)) !== monthPrefix) return;
       }
       var name = String(val(3) || '').trim();
       if (!name) return;
