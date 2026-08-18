@@ -204,15 +204,29 @@
     max-width: 1080px; margin: 16px auto 0; background: var(--surface); border: 1px solid var(--border);
     border-radius: 14px; padding: 16px;
   }
-  .top-customers-title {
-    font-family: 'Chonburi', sans-serif; font-size: 14px; color: var(--yellow); margin: 0 0 14px; letter-spacing: 0.3px;
+  .top-customers-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
   }
-  .podium-row { display: flex; align-items: flex-end; justify-content: center; gap: 10px; }
-  .podium-col { flex: 1; max-width: 140px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .podium-medal { line-height: 1; }
-  .podium-name { font-weight: 500; text-align: center; color: var(--text); }
-  .podium-amount { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--green); }
-  .podium-bar { width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px 10px 0 0; }
+  .top-customers-title {
+    font-family: 'Chonburi', sans-serif; font-size: 14px; color: var(--yellow); margin: 0; letter-spacing: 0.3px;
+  }
+  .top-customers-tabs { display: flex; gap: 6px; }
+  .tc-tab {
+    font-family: 'Kanit', sans-serif; font-size: 12px; color: var(--text-dim); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; cursor: pointer; line-height: 1.2;
+  }
+  .tc-tab.active { color: #1a1400; background: var(--yellow); border-color: var(--yellow); font-weight: 600; }
+  .top-customers-sub { font-size: 11px; color: var(--text-faint); margin: 10px 0 2px; }
+  .top-list { display: flex; flex-direction: column; margin-top: 8px; }
+  .top-row {
+    display: flex; align-items: center; gap: 10px; padding: 9px 2px;
+    border-top: 1px solid var(--border);
+  }
+  .top-row:first-child { border-top: none; }
+  .top-medal { font-size: 18px; line-height: 1; flex: none; width: 22px; text-align: center; }
+  .top-name { flex: 1; font-weight: 500; color: var(--text); font-size: 13px; }
+  .top-amount { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--green); font-size: 13px; }
+  .top-customers-empty { font-size: 12px; color: var(--text-faint); padding: 10px 2px 2px; }
 
   .modal-backdrop {
     position: fixed; inset: 0; background: rgba(6,10,18,0.82); z-index: 50;
@@ -397,18 +411,19 @@
     return first[0] + '***' + first[first.length - 1];
   }
 
-  var PODIUM_ORDER = [2, 1, 3]; // ที่ 2 (ซ้าย), ที่ 1 (กลาง), ที่ 3 (ขวา)
   var PODIUM_STYLE = {
-    1: { medal: '&#129351;', height: 92, medalSize: 26 },
-    2: { medal: '&#129352;', height: 74, medalSize: 20 },
-    3: { medal: '&#129353;', height: 60, medalSize: 20 }
+    1: { medal: '&#129351;' },
+    2: { medal: '&#129352;' },
+    3: { medal: '&#129353;' }
   };
 
   // จัดอันดับลูกค้าซื้อเยอะสุดจากชีต Orders ตัวเดียวกับที่ใช้คำนวณ "มาแรง" ด้านบน (ไม่ต้องยิงคำขอเพิ่ม)
   // ยอดซื้อคิดแบบเดียวกับแอปจัดการร้าน (ดู spentOf ใน CustomersTab.jsx): ไม่นับออเดอร์ที่ยกเลิก,
   // สถานะ "paid" นับเต็มราคา (คอลัมน์ 7), สถานะ "partial" นับเฉพาะยอดที่ชำระแล้ว (คอลัมน์ 8),
   // นับรวมทุกประเภทออเดอร์ (ไม่ใช่แค่ sell_pokemon) ตรงกับพฤติกรรมในแอป
-  function parseTopCustomers(table) {
+  // monthPrefix: ถ้าใส่ (รูปแบบ "YYYY-MM") จะนับเฉพาะออเดอร์ที่วันที่ (คอลัมน์ 0, "YYYY-MM-DD") ขึ้นต้นตรงกัน
+  // เพื่อทำยอด "รายเดือน" — ถ้าไม่ใส่ (null/undefined) จะนับรวมทุกออเดอร์ตั้งแต่เริ่มร้าน ("ตลอดเวลา")
+  function parseTopCustomers(table, monthPrefix) {
     var totals = {};
     if (!table || !table.rows) return [];
     table.rows.forEach(function (r) {
@@ -416,6 +431,10 @@
       var val = function (i) { return c[i] && (c[i].v !== null && c[i].v !== undefined) ? c[i].v : ''; };
       var cancelled = String(val(10) || '').trim();
       if (cancelled) return;
+      if (monthPrefix) {
+        var dateStr = String(val(0) || '').trim();
+        if (dateStr.slice(0, 7) !== monthPrefix) return;
+      }
       var name = String(val(3) || '').trim();
       if (!name) return;
       var status = String(val(8) || '').trim();
@@ -429,27 +448,63 @@
       .slice(0, 3);
   }
 
-  function renderTopCustomers(top3) {
+  var THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+
+  // สถานะปัจจุบันของการ์ด Top 3 — เก็บตาราง Orders ดิบไว้เพื่อสลับ "รายเดือน"/"ตลอดเวลา" ได้ทันที
+  // โดยไม่ต้องยิงคำขอโหลดชีตใหม่
+  var topCustomersState = { ordersTable: null, mode: 'month' };
+
+  function currentMonthPrefix() {
+    var now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  }
+
+  function renderTopCustomers() {
     var el = document.getElementById('topCustomers');
-    if (!top3.length) { el.innerHTML = ''; return; }
-    var cols = PODIUM_ORDER.map(function (rank) {
-      var c = top3[rank - 1];
-      if (!c) return '<div class="podium-col"></div>';
-      var s = PODIUM_STYLE[rank];
-      return (
-        '<div class="podium-col">' +
-          '<div class="podium-medal" style="font-size:' + s.medalSize + 'px">' + s.medal + '</div>' +
-          '<div class="podium-name" style="font-size:' + (rank === 1 ? 13 : 12) + 'px">' + escapeHtml(maskName(c.name)) + '</div>' +
-          '<div class="podium-amount" style="font-size:' + (rank === 1 ? 13 : 11) + 'px">&#3647;' + fmtNumber(c.spent) + '</div>' +
-          '<div class="podium-bar" style="height:' + s.height + 'px"></div>' +
-        '</div>'
-      );
-    }).join('');
+    var mode = topCustomersState.mode;
+    var monthPrefix = mode === 'month' ? currentMonthPrefix() : null;
+    var top3 = parseTopCustomers(topCustomersState.ordersTable, monthPrefix);
+
+    var now = new Date();
+    var monthLabel = THAI_MONTHS[now.getMonth()] + ' ' + (now.getFullYear() + 543);
+
+    var tabs =
+      '<div class="top-customers-tabs">' +
+        '<button type="button" class="tc-tab' + (mode === 'month' ? ' active' : '') + '" data-mode="month">รายเดือน</button>' +
+        '<button type="button" class="tc-tab' + (mode === 'all' ? ' active' : '') + '" data-mode="all">ตลอดเวลา</button>' +
+      '</div>';
+
+    var body = top3.length
+      ? '<div class="top-list">' + top3.map(function (c, i) {
+          var rank = i + 1;
+          return (
+            '<div class="top-row">' +
+              '<span class="top-medal">' + PODIUM_STYLE[rank].medal + '</span>' +
+              '<span class="top-name">' + escapeHtml(maskName(c.name)) + '</span>' +
+              '<span class="top-amount">&#3647;' + fmtNumber(c.spent) + '</span>' +
+            '</div>'
+          );
+        }).join('') + '</div>'
+      : '<div class="top-customers-empty">' + (mode === 'month' ? 'ยังไม่มีออเดอร์ในเดือนนี้' : 'ยังไม่มีข้อมูล') + '</div>';
+
     el.innerHTML =
       '<div class="top-customers-card">' +
-        '<div class="top-customers-title">ลูกค้าซื้อเยอะสุด</div>' +
-        '<div class="podium-row">' + cols + '</div>' +
+        '<div class="top-customers-head">' +
+          '<div class="top-customers-title">ลูกค้าซื้อเยอะสุด</div>' +
+          tabs +
+        '</div>' +
+        (mode === 'month' ? '<div class="top-customers-sub">' + monthLabel + '</div>' : '') +
+        body +
       '</div>';
+
+    el.querySelectorAll('.tc-tab').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var m = btn.getAttribute('data-mode');
+        if (m === topCustomersState.mode) return;
+        topCustomersState.mode = m;
+        renderTopCustomers();
+      });
+    });
   }
 
   function loadCatalog(id) {
@@ -471,7 +526,12 @@
         // แปะจำนวน "ขายไปแล้ว" ต่อชิ้นสินค้า จากยอดขายสะสมในชีต Orders อิงตามรหัสสินค้า
         // (สินค้าที่ยังไม่มีรหัส — กรณีชีตเก่ามาก ๆ — จะไม่มียอดขายโชว์)
         rows.forEach(function (r) { r.sold = r.code ? (trendingMap[r.code.toUpperCase()] || 0) : 0; });
-        renderTopCustomers(ordersResp && ordersResp.table ? parseTopCustomers(ordersResp.table) : []);
+        topCustomersState.ordersTable = ordersResp && ordersResp.table ? ordersResp.table : null;
+        if (topCustomersState.ordersTable) {
+          renderTopCustomers();
+        } else {
+          document.getElementById('topCustomers').innerHTML = '';
+        }
         renderCatalog(rows);
       } catch (e) {
         renderError('อ่านข้อมูลไม่สำเร็จ', String(e && e.message || e));
