@@ -3,17 +3,19 @@ import { Percent, Banknote, TrendingDown, TrendingUp, CheckSquare, Square, Searc
 import { clamp0, fmtMoney, variantLabel } from "../utils.js";
 import Modal from "./Modal.jsx";
 
-// เมนู "ปรับราคาสินค้าทั้งหมด" — เลือกรายชิ้นจากสต๊อกทุกไอดี ปรับราคาแบบ % หรือจำนวนเงินคงที่
-// (เพิ่ม/ลดก็ได้) แล้วดู preview ราคาใหม่ก่อนกดยืนยันจริง ไม่กระทบ quantity หรือ stock movement log
+// เมนู "ปรับราคาสินค้าทั้งหมด" — จัดกลุ่มสต๊อกทุกไอดีตาม "รหัสสินค้า" (ชื่อ+ประเภทเดียวกัน
+// จากคนละไอดีจะมีรหัสเดียวกันเสมอ ดู ensureProductCode ใน utils.js) เพื่อให้ติ๊กเลือกครั้งเดียว
+// ก็ปรับราคาของ Pokémon ชนิดนั้นในทุกไอดีที่ถืออยู่พร้อมกันได้ — แต่ละหน่วยยังคงราคาตัวเองอยู่
+// (ปรับเป็น % หรือจำนวนเงินก็คิดจากราคาของหน่วยนั้นๆ ไม่ได้เซ็ตให้เท่ากันหมด)
 export default function BulkPriceModal({ data, onClose, onApply, showToast }) {
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState(() => new Set());
+  const [selected, setSelected] = useState(() => new Set()); // Set ของ group key (รหัสสินค้า หรือ ชื่อ+ประเภท ถ้าไม่มีรหัส)
   const [adjustMode, setAdjustMode] = useState("percent"); // "percent" | "amount"
   const [direction, setDirection] = useState("decrease"); // "decrease" | "increase"
   const [value, setValue] = useState("");
   const [confirming, setConfirming] = useState(false);
 
-  // รวมสต๊อกจากทุกไอดีเกมเป็นลิสต์เดียว (สต๊อกถูกเก็บซ้อนอยู่ใน gameAccounts[].stock)
+  // รวมสต๊อกจากทุกไอดีเกมเป็นลิสต์เดียวก่อน (สต๊อกถูกเก็บซ้อนอยู่ใน gameAccounts[].stock)
   const allStock = useMemo(() => {
     const rows = [];
     (data.gameAccounts || []).forEach(acc => {
@@ -24,22 +26,33 @@ export default function BulkPriceModal({ data, onClose, onApply, showToast }) {
     return rows;
   }, [data.gameAccounts]);
 
-  const filtered = useMemo(() => {
+  // แล้วจัดกลุ่มตามรหัสสินค้า — 1 กลุ่ม = 1 ชนิด Pokémon (ชื่อ+ประเภท) อาจกระจายอยู่หลายไอดี
+  const groups = useMemo(() => {
+    const map = new Map();
+    allStock.forEach(s => {
+      const key = s.productCode || `noCode:${(s.name || "").trim().toLowerCase()}|${s.variants?.[0] || ""}`;
+      if (!map.has(key)) map.set(key, { key, productCode: s.productCode || "", name: s.name, variantKey: s.variants?.[0], items: [] });
+      map.get(key).items.push(s);
+    });
+    return Array.from(map.values());
+  }, [allStock]);
+
+  const filteredGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return allStock;
-    return allStock.filter(s =>
-      (s.name || "").toLowerCase().includes(q) ||
-      (s.accountName || "").toLowerCase().includes(q) ||
-      (s.productCode || "").toLowerCase().includes(q)
+    if (!q) return groups;
+    return groups.filter(g =>
+      (g.name || "").toLowerCase().includes(q) ||
+      (g.productCode || "").toLowerCase().includes(q) ||
+      g.items.some(it => (it.accountName || "").toLowerCase().includes(q))
     );
-  }, [allStock, query]);
+  }, [groups, query]);
 
-  const allFilteredSelected = filtered.length > 0 && filtered.every(s => selected.has(s.id));
+  const allFilteredSelected = filteredGroups.length > 0 && filteredGroups.every(g => selected.has(g.key));
 
-  function toggleOne(id) {
+  function toggleOne(key) {
     setSelected(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
   }
@@ -47,9 +60,9 @@ export default function BulkPriceModal({ data, onClose, onApply, showToast }) {
     setSelected(prev => {
       const next = new Set(prev);
       if (allFilteredSelected) {
-        filtered.forEach(s => next.delete(s.id));
+        filteredGroups.forEach(g => next.delete(g.key));
       } else {
-        filtered.forEach(s => next.add(s.id));
+        filteredGroups.forEach(g => next.add(g.key));
       }
       return next;
     });
@@ -67,7 +80,14 @@ export default function BulkPriceModal({ data, onClose, onApply, showToast }) {
     return clamp0(Math.round(result));
   }
 
-  const selectedItems = allStock.filter(s => selected.has(s.id));
+  function priceRangeLabel(items) {
+    const prices = items.map(it => Number(it.price) || 0);
+    const min = Math.min(...prices), max = Math.max(...prices);
+    return min === max ? fmtMoney(min) : `${fmtMoney(min)}–${fmtMoney(max)}`;
+  }
+
+  const selectedGroups = groups.filter(g => selected.has(g.key));
+  const selectedItems = selectedGroups.flatMap(g => g.items);
   const canPreview = selectedItems.length > 0 && numValue > 0;
   const totalOld = selectedItems.reduce((s, it) => s + (Number(it.price) || 0), 0);
   const totalNew = selectedItems.reduce((s, it) => s + computeNewPrice(it.price), 0);
@@ -96,26 +116,28 @@ export default function BulkPriceModal({ data, onClose, onApply, showToast }) {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <span style={{ fontSize: 11, color: "var(--muted)" }}>{selected.size} รายการที่เลือก จากทั้งหมด {allStock.length}</span>
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>{selected.size} ชนิดที่เลือก จากทั้งหมด {groups.length} ชนิด ({allStock.length} รายการสต๊อก)</span>
             <button type="button" className="pgs-btn pgs-btn-outline" style={{ padding: "5px 10px", fontSize: 12 }} onClick={toggleAllFiltered}>
               {allFilteredSelected ? <CheckSquare size={13} /> : <Square size={13} />} เลือกทั้งหมด{query ? " (ที่กรองอยู่)" : ""}
             </button>
           </div>
 
           <div className="pgs-card" style={{ maxHeight: 260, overflowY: "auto", padding: 6, marginBottom: 14 }}>
-            {filtered.length === 0 && (
+            {filteredGroups.length === 0 && (
               <div style={{ fontSize: 12, color: "var(--muted)", padding: 10, textAlign: "center" }}>ไม่พบสินค้า</div>
             )}
-            {filtered.map(s => (
-              <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 6px", borderBottom: "1px solid var(--border)", cursor: "pointer" }}>
-                <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleOne(s.id)} style={{ width: 16, height: 16, flexShrink: 0 }} />
+            {filteredGroups.map(g => (
+              <label key={g.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 6px", borderBottom: "1px solid var(--border)", cursor: "pointer" }}>
+                <input type="checkbox" checked={selected.has(g.key)} onChange={() => toggleOne(g.key)} style={{ width: 16, height: 16, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {s.name || "(ไม่มีชื่อ)"} <span style={{ color: "var(--muted)", fontSize: 11 }}>{variantLabel(data, s.variants?.[0])}</span>
+                    {g.name || "(ไม่มีชื่อ)"} <span style={{ color: "var(--muted)", fontSize: 11 }}>{variantLabel(data, g.variantKey)}</span>
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--muted)" }}>{s.accountName}{s.productCode ? ` · ${s.productCode}` : ""}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                    {g.productCode || "ไม่มีรหัส"} · อยู่ใน {g.items.length} ไอดี{g.items.length > 1 ? ` (${g.items.map(it => it.accountName).join(", ")})` : ""}
+                  </div>
                 </div>
-                <div className="pgs-mono" style={{ fontSize: 13, flexShrink: 0 }}>{fmtMoney(s.price || 0)}</div>
+                <div className="pgs-mono" style={{ fontSize: 13, flexShrink: 0 }}>{priceRangeLabel(g.items)}</div>
               </label>
             ))}
           </div>
@@ -154,7 +176,7 @@ export default function BulkPriceModal({ data, onClose, onApply, showToast }) {
             disabled={!canPreview}
             onClick={() => setConfirming(true)}
           >
-            ดูตัวอย่างราคาใหม่ ({selected.size} รายการ)
+            ดูตัวอย่างราคาใหม่ ({selected.size} ชนิด · {selectedItems.length} รายการสต๊อก)
           </button>
         </>
       ) : (
