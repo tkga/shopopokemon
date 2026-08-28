@@ -10,12 +10,14 @@ import {
   Pencil,
   Check,
   X,
+  Tag,
 } from "lucide-react";
 import { spreadsheetUrl } from "../googleSync.js";
 import { fmtDate, daysBetween, isVariantInUse, genVariantKey } from "../utils.js";
 import ImageCropModal from "./ImageCropModal.jsx";
 import ShopLogo from "./ShopLogo.jsx";
 import SubHeader from "./SubHeader.jsx";
+import BulkPriceModal from "./BulkPriceModal.jsx";
 
 export default function SettingsTab({ data, setData, onBackup, onRestore, onExportExcel, onExportPDF, showToast, back, googleSyncing, googleStatus, onConnectGoogle, onSyncNow, onDisconnectGoogle, openTrash }) {
   const fileRef = useRef(null);
@@ -25,6 +27,22 @@ export default function SettingsTab({ data, setData, onBackup, onRestore, onExpo
   const [cropTarget, setCropTarget] = useState(null); // "logo" | "receiptBg"
   const [pinForm, setPinForm] = useState({ current: "", next: "", confirm: "", question: data.settings.pinQuestion || "", answer: "" });
   const hasPin = !!data.settings.pin;
+  const [bulkPriceOpen, setBulkPriceOpen] = useState(false);
+  const stockCount = data.gameAccounts.reduce((s, a) => s + (a.stock || []).length, 0);
+
+  // ปรับราคาสินค้าที่เลือกไว้พร้อมกันหลายรายการ (ข้ามได้ทุกไอดี) — updates: [{accountId, stockItemId, newPrice}]
+  // จากเมนู "ปรับราคาสินค้าทั้งหมด"; ไม่กระทบจำนวนคงเหลือหรือประวัติการเคลื่อนไหวสต๊อก
+  function applyBulkPriceChange(updates) {
+    setData(d => ({
+      ...d,
+      gameAccounts: d.gameAccounts.map(a => {
+        const forThisAccount = updates.filter(u => u.accountId === a.id);
+        if (forThisAccount.length === 0) return a;
+        const priceMap = new Map(forThisAccount.map(u => [u.stockItemId, u.newPrice]));
+        return { ...a, stock: (a.stock || []).map(s => priceMap.has(s.id) ? { ...s, price: priceMap.get(s.id) } : s) };
+      }),
+    }));
+  }
 
   function savePin() {
     if (hasPin && pinForm.current !== data.settings.pin) { showToast?.("รหัส PIN ปัจจุบันไม่ถูกต้อง"); return; }
@@ -169,6 +187,10 @@ export default function SettingsTab({ data, setData, onBackup, onRestore, onExpo
         <ImageCropModal src={cropSrc} aspect={0.75} shape="rect" outputW={720} title="ปรับพื้นหลังใบเสร็จ" onCancel={handleCropCancel} onConfirm={handleCropConfirm} />
       )}
 
+      {bulkPriceOpen && (
+        <BulkPriceModal data={data} onClose={() => setBulkPriceOpen(false)} onApply={applyBulkPriceChange} showToast={showToast} />
+      )}
+
       <div className="pgs-sectiontitle">ล็อกแอปด้วย PIN</div>
       <div className="pgs-card" style={{ marginBottom: 8 }}>
         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>
@@ -271,6 +293,16 @@ export default function SettingsTab({ data, setData, onBackup, onRestore, onExpo
       <div className="pgs-sectiontitle">ส่งออกรายงาน</div>
       <button className="pgs-btn pgs-btn-outline" style={{ width: "100%", marginBottom: 8, justifyContent: "flex-start" }} onClick={onExportExcel}><FileDown size={15} /> Export Excel (.xlsx)</button>
       <button className="pgs-btn pgs-btn-outline" style={{ width: "100%", marginBottom: 8, justifyContent: "flex-start" }} onClick={onExportPDF}><Printer size={15} /> Export PDF (พิมพ์ / บันทึกเป็น PDF)</button>
+
+      <div className="pgs-sectiontitle">จัดการราคาสินค้า</div>
+      <button
+        className="pgs-btn pgs-btn-outline" style={{ width: "100%", marginBottom: 8, justifyContent: "flex-start" }}
+        disabled={stockCount === 0}
+        onClick={() => setBulkPriceOpen(true)}
+      >
+        <Tag size={15} /> ปรับราคาสินค้าทั้งหมด {stockCount ? `(${stockCount} รายการ)` : ""}
+      </button>
+      <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 8 }}>เลือกสินค้าจากทุกไอดีที่ต้องการ แล้วปรับราคาพร้อมกันแบบเปอร์เซ็นต์หรือจำนวนเงิน ดูตัวอย่างราคาใหม่ก่อนยืนยันได้</div>
 
       <div className="pgs-sectiontitle">ประเภท Pokémon</div>
       <div className="pgs-card" style={{ marginBottom: 8 }}>
