@@ -9,6 +9,7 @@ import Modal from "./Modal.jsx";
 // (ปรับเป็น % หรือจำนวนเงินก็คิดจากราคาของหน่วยนั้นๆ ไม่ได้เซ็ตให้เท่ากันหมด)
 export default function BulkPriceModal({ data, onClose, onApply, showToast }) {
   const [query, setQuery] = useState("");
+  const [variantFilter, setVariantFilter] = useState(() => new Set()); // เลือกได้หลายประเภท — ว่าง = ทุกประเภท
   const [selected, setSelected] = useState(() => new Set()); // Set ของ group key (รหัสสินค้า หรือ ชื่อ+ประเภท ถ้าไม่มีรหัส)
   const [adjustMode, setAdjustMode] = useState("percent"); // "percent" | "amount"
   const [direction, setDirection] = useState("decrease"); // "decrease" | "increase"
@@ -37,15 +38,40 @@ export default function BulkPriceModal({ data, onClose, onApply, showToast }) {
     return Array.from(map.values());
   }, [allStock]);
 
+  // นับจำนวนชนิดสินค้าต่อประเภท (ปกติ/Shiny/Shadow ฯลฯ) ไว้โชว์เป็นชิปตัวกรอง — เรียงตามลำดับที่ตั้งค่าไว้ใน data.pokemonVariants
+  const variantChips = useMemo(() => {
+    const counts = new Map();
+    groups.forEach(g => {
+      const k = g.variantKey || "";
+      counts.set(k, (counts.get(k) || 0) + 1);
+    });
+    const ordered = (data.pokemonVariants || [])
+      .filter(v => counts.has(v.key))
+      .map(v => ({ key: v.key, label: v.label, emoji: v.emoji, count: counts.get(v.key) }));
+    if (counts.has("")) ordered.push({ key: "", label: "ไม่ระบุประเภท", emoji: "", count: counts.get("") });
+    return ordered;
+  }, [groups, data.pokemonVariants]);
+
+  function toggleVariantFilter(key) {
+    setVariantFilter(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
   const filteredGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return groups;
-    return groups.filter(g =>
-      (g.name || "").toLowerCase().includes(q) ||
-      (g.productCode || "").toLowerCase().includes(q) ||
-      g.items.some(it => (it.accountName || "").toLowerCase().includes(q))
-    );
-  }, [groups, query]);
+    return groups.filter(g => {
+      if (variantFilter.size > 0 && !variantFilter.has(g.variantKey || "")) return false;
+      if (!q) return true;
+      return (
+        (g.name || "").toLowerCase().includes(q) ||
+        (g.productCode || "").toLowerCase().includes(q) ||
+        g.items.some(it => (it.accountName || "").toLowerCase().includes(q))
+      );
+    });
+  }, [groups, query, variantFilter]);
 
   const allFilteredSelected = filteredGroups.length > 0 && filteredGroups.every(g => selected.has(g.key));
 
@@ -115,10 +141,40 @@ export default function BulkPriceModal({ data, onClose, onApply, showToast }) {
             </div>
           </div>
 
+          {variantChips.length > 0 && (
+            <div className="pgs-field">
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <label className="pgs-label" style={{ marginBottom: 0 }}>กรองตามประเภท</label>
+                {variantFilter.size > 0 && (
+                  <button type="button" style={{ background: "none", border: "none", padding: 0, fontSize: 11, color: "var(--yellow)", cursor: "pointer" }} onClick={() => setVariantFilter(new Set())}>ล้างตัวกรอง</button>
+                )}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                {variantChips.map(v => {
+                  const active = variantFilter.has(v.key);
+                  return (
+                    <button
+                      key={v.key || "none"}
+                      type="button"
+                      className={"pgs-btn " + (active ? "pgs-btn-primary" : "pgs-btn-outline")}
+                      style={{ padding: "5px 10px", fontSize: 12 }}
+                      onClick={() => toggleVariantFilter(v.key)}
+                    >
+                      {v.emoji ? `${v.emoji} ` : ""}{v.label} ({v.count})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <span style={{ fontSize: 11, color: "var(--muted)" }}>{selected.size} ชนิดที่เลือก จากทั้งหมด {groups.length} ชนิด ({allStock.length} รายการสต๊อก)</span>
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>
+              {selected.size} ชนิดที่เลือก จากทั้งหมด {groups.length} ชนิด ({allStock.length} รายการสต๊อก)
+              {filteredGroups.length !== groups.length ? ` — กำลังกรองเหลือ ${filteredGroups.length} ชนิด` : ""}
+            </span>
             <button type="button" className="pgs-btn pgs-btn-outline" style={{ padding: "5px 10px", fontSize: 12 }} onClick={toggleAllFiltered}>
-              {allFilteredSelected ? <CheckSquare size={13} /> : <Square size={13} />} เลือกทั้งหมด{query ? " (ที่กรองอยู่)" : ""}
+              {allFilteredSelected ? <CheckSquare size={13} /> : <Square size={13} />} เลือกทั้งหมด{(query || variantFilter.size > 0) ? " (ที่กรองอยู่)" : ""}
             </button>
           </div>
 
