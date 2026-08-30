@@ -199,35 +199,6 @@
   .card { cursor: pointer; transition: border-color 0.15s; }
   .card:hover { border-color: var(--yellow-dim); }
 
-  /* การ์ดลูกค้าซื้อเยอะสุด (Top 3) — ชื่อถูกปิดบังบางส่วนเสมอเพราะหน้านี้เปิดสาธารณะ */
-  .top-customers-card {
-    max-width: 1080px; margin: 16px auto 0; background: var(--surface); border: 1px solid var(--border);
-    border-radius: 14px; padding: 16px;
-  }
-  .top-customers-head {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
-  }
-  .top-customers-title {
-    font-family: 'Chonburi', sans-serif; font-size: 14px; color: var(--yellow); margin: 0; letter-spacing: 0.3px;
-  }
-  .top-customers-tabs { display: flex; gap: 6px; }
-  .tc-tab {
-    font-family: 'Kanit', sans-serif; font-size: 12px; color: var(--text-dim); background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; cursor: pointer; line-height: 1.2;
-  }
-  .tc-tab.active { color: #1a1400; background: var(--yellow); border-color: var(--yellow); font-weight: 600; }
-  .top-customers-sub { font-size: 11px; color: var(--text-faint); margin: 10px 0 2px; }
-  .top-list { display: flex; flex-direction: column; margin-top: 8px; }
-  .top-row {
-    display: flex; align-items: center; gap: 10px; padding: 9px 2px;
-    border-top: 1px solid var(--border);
-  }
-  .top-row:first-child { border-top: none; }
-  .top-medal { font-size: 18px; line-height: 1; flex: none; width: 22px; text-align: center; }
-  .top-name { flex: 1; font-weight: 500; color: var(--text); font-size: 13px; }
-  .top-amount { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--green); font-size: 13px; }
-  .top-customers-empty { font-size: 12px; color: var(--text-faint); padding: 10px 2px 2px; }
-
   .modal-backdrop {
     position: fixed; inset: 0; background: rgba(6,10,18,0.82); z-index: 50;
     display: flex; align-items: flex-end; justify-content: center;
@@ -301,7 +272,6 @@
 </header>
 
 <div class="wrap">
-  <div id="topCustomers"></div>
   <div id="root"></div>
 </div>
 
@@ -402,124 +372,6 @@
 
   var trendingMap = {};
 
-  // ปิดบังชื่อลูกค้าสำหรับการ์ด Top 3 — หน้านี้เปิดสาธารณะให้ใครก็ตามที่มีลิงก์เข้าดูได้
-  // จึงห้ามโชว์ชื่อเต็มเด็ดขาด (ต่างจากแอปจัดการร้านที่ปิดบังเฉพาะการ์ด Top 3 แต่ลิสต์ล่างโชว์เต็ม)
-  // กติกาเดียวกับแอป: เอาเฉพาะคำแรกของชื่อ โชว์ตัวอักษรตัวแรก + *** + ตัวอักษรตัวสุดท้าย
-  function maskName(fullName) {
-    var first = String(fullName || '').trim().split(/\s+/)[0] || '';
-    if (first.length <= 2) return first ? first[0] + Array(Math.max(first.length - 1, 1) + 1).join('*') : '';
-    return first[0] + '***' + first[first.length - 1];
-  }
-
-  var PODIUM_STYLE = {
-    1: { medal: '&#129351;' },
-    2: { medal: '&#129352;' },
-    3: { medal: '&#129353;' }
-  };
-
-  // จัดอันดับลูกค้าซื้อเยอะสุดจากชีต Orders ตัวเดียวกับที่ใช้คำนวณ "มาแรง" ด้านบน (ไม่ต้องยิงคำขอเพิ่ม)
-  // ยอดซื้อคิดแบบเดียวกับแอปจัดการร้าน (ดู spentOf ใน CustomersTab.jsx): ไม่นับออเดอร์ที่ยกเลิก,
-  // สถานะ "paid" และ "partial" นับเต็มราคาสินค้าเหมือนกัน (คอลัมน์ 6, ซื้อเท่าไหร่นับเท่านั้น
-  // ไม่ว่าจะจ่ายครบหรือจ่ายบางส่วน), สถานะอื่น (เช่น "pending") ไม่นับ,
-  // นับรวมทุกประเภทออเดอร์ (ไม่ใช่แค่ sell_pokemon) ตรงกับพฤติกรรมในแอป
-  // monthPrefix: ถ้าใส่ (รูปแบบ "YYYY-MM") จะนับเฉพาะออเดอร์ที่วันที่ (คอลัมน์ 0, "YYYY-MM-DD") ขึ้นต้นตรงกัน
-  // เพื่อทำยอด "รายเดือน" — ถ้าไม่ใส่ (null/undefined) จะนับรวมทุกออเดอร์ตั้งแต่เริ่มร้าน ("ตลอดเวลา")
-  // ดึง "YYYY-MM" จากคอลัมน์วันที่ของแถวออเดอร์ — รองรับ 2 รูปแบบ:
-  // 1) ข้อความธรรมดา "2026-08-15" (ตามที่แอปเขียนลงชีตตอน sync ผ่าน orderRow() ใน googleSync.js)
-  // 2) "Date(2026,7,15)" — Google Sheets มักแปลงคอลัมน์ที่ข้อความหน้าตาเป็นวันที่ให้กลายเป็นชนิด Date
-  //    จริงอัตโนมัติ (ขึ้นกับรูปแบบเซลล์) ซึ่ง Google Visualization API จะส่งค่ากลับมาเป็น literal
-  //    แบบนี้แทน (เดือนเป็น 0-based ต้อง +1) — ถ้าไม่รองรับรูปแบบนี้ ตัวกรองรายเดือนจะไม่ match อะไรเลย
-  function monthPrefixOf(raw) {
-    var s = String(raw || '').trim();
-    var m = s.match(/^Date\((\d+),(\d+),(\d+)/);
-    if (m) return m[1] + '-' + String(Number(m[2]) + 1).padStart(2, '0');
-    if (/^\d{4}-\d{2}/.test(s)) return s.slice(0, 7);
-    return '';
-  }
-
-  function parseTopCustomers(table, monthPrefix) {
-    var totals = {};
-    if (!table || !table.rows) return [];
-    table.rows.forEach(function (r) {
-      var c = r.c || [];
-      var val = function (i) { return c[i] && (c[i].v !== null && c[i].v !== undefined) ? c[i].v : ''; };
-      var cancelled = String(val(10) || '').trim();
-      if (cancelled) return;
-      if (monthPrefix) {
-        if (monthPrefixOf(val(0)) !== monthPrefix) return;
-      }
-      var name = String(val(3) || '').trim();
-      if (!name) return;
-      var status = String(val(8) || '').trim();
-      var spent = (status === 'paid' || status === 'partial') ? (Number(val(6)) || 0) : 0;
-      totals[name] = (totals[name] || 0) + spent;
-    });
-    return Object.keys(totals)
-      .map(function (name) { return { name: name, spent: totals[name] }; })
-      .filter(function (x) { return x.spent > 0; })
-      .sort(function (a, b) { return b.spent - a.spent; })
-      .slice(0, 3);
-  }
-
-  var THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-
-  // สถานะปัจจุบันของการ์ด Top 3 — เก็บตาราง Orders ดิบไว้เพื่อสลับ "รายเดือน"/"ตลอดเวลา" ได้ทันที
-  // โดยไม่ต้องยิงคำขอโหลดชีตใหม่
-  var topCustomersState = { ordersTable: null, mode: 'month' };
-
-  function currentMonthPrefix() {
-    var now = new Date();
-    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  }
-
-  function renderTopCustomers() {
-    var el = document.getElementById('topCustomers');
-    var mode = topCustomersState.mode;
-    var monthPrefix = mode === 'month' ? currentMonthPrefix() : null;
-    var top3 = parseTopCustomers(topCustomersState.ordersTable, monthPrefix);
-
-    var now = new Date();
-    var monthLabel = THAI_MONTHS[now.getMonth()] + ' ' + (now.getFullYear() + 543);
-
-    var tabs =
-      '<div class="top-customers-tabs">' +
-        '<button type="button" class="tc-tab' + (mode === 'month' ? ' active' : '') + '" data-mode="month">รายเดือน</button>' +
-        '<button type="button" class="tc-tab' + (mode === 'all' ? ' active' : '') + '" data-mode="all">ตลอดเวลา</button>' +
-      '</div>';
-
-    var body = top3.length
-      ? '<div class="top-list">' + top3.map(function (c, i) {
-          var rank = i + 1;
-          return (
-            '<div class="top-row">' +
-              '<span class="top-medal">' + PODIUM_STYLE[rank].medal + '</span>' +
-              '<span class="top-name">' + escapeHtml(maskName(c.name)) + '</span>' +
-              '<span class="top-amount">&#3647;' + fmtNumber(c.spent) + '</span>' +
-            '</div>'
-          );
-        }).join('') + '</div>'
-      : '<div class="top-customers-empty">' + (mode === 'month' ? 'ยังไม่มีออเดอร์ในเดือนนี้' : 'ยังไม่มีข้อมูล') + '</div>';
-
-    el.innerHTML =
-      '<div class="top-customers-card">' +
-        '<div class="top-customers-head">' +
-          '<div class="top-customers-title">ลูกค้าซื้อเยอะสุด</div>' +
-          tabs +
-        '</div>' +
-        (mode === 'month' ? '<div class="top-customers-sub">' + monthLabel + '</div>' : '') +
-        body +
-      '</div>';
-
-    el.querySelectorAll('.tc-tab').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var m = btn.getAttribute('data-mode');
-        if (m === topCustomersState.mode) return;
-        topCustomersState.mode = m;
-        renderTopCustomers();
-      });
-    });
-  }
-
   function loadCatalog(id) {
     renderLoading();
     Promise.all([
@@ -539,12 +391,6 @@
         // แปะจำนวน "ขายไปแล้ว" ต่อชิ้นสินค้า จากยอดขายสะสมในชีต Orders อิงตามรหัสสินค้า
         // (สินค้าที่ยังไม่มีรหัส — กรณีชีตเก่ามาก ๆ — จะไม่มียอดขายโชว์)
         rows.forEach(function (r) { r.sold = r.code ? (trendingMap[r.code.toUpperCase()] || 0) : 0; });
-        topCustomersState.ordersTable = ordersResp && ordersResp.table ? ordersResp.table : null;
-        if (topCustomersState.ordersTable) {
-          renderTopCustomers();
-        } else {
-          document.getElementById('topCustomers').innerHTML = '';
-        }
         renderCatalog(rows);
       } catch (e) {
         renderError('อ่านข้อมูลไม่สำเร็จ', String(e && e.message || e));
@@ -625,7 +471,6 @@
     document.getElementById('root').innerHTML =
       '<div class="loading-state"><div class="scan"></div>กำลังโหลดรายการสินค้า...</div>';
     document.getElementById('statusLine').textContent = '';
-    document.getElementById('topCustomers').innerHTML = '';
   }
 
   function renderError(title, detail) {
