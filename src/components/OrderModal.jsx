@@ -14,6 +14,7 @@ import EmptyState from "./EmptyState.jsx";
 import VariantChips from "./VariantChips.jsx";
 import RoundsEditor from "./RoundsEditor.jsx";
 import ProofImagePicker from "./ProofImagePicker.jsx";
+import SearchSelect from "./SearchSelect.jsx";
 
 // รวมยอด "จำนวนที่ต้องซื้อทั้งหมด" ให้อัตโนมัติ แทนที่จะให้กรอกยอดรวมเอง:
 // - โหมด "ไม่ระบุรอบ" (anytime): จำนวนที่ซื้อต่อรอบ × จำนวนรอบที่ต้องตี
@@ -224,9 +225,12 @@ export default function OrderModal({ data, mode, item, onClose, onSave, onCancel
       </div>
       <div className="pgs-field">
         <label className="pgs-label">ลูกค้า</label>
-        <select className="pgs-select" value={form.customerId} onChange={e => pickCustomer(e.target.value)}>
-          {data.customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        <SearchSelect
+          value={form.customerId}
+          onChange={pickCustomer}
+          options={data.customers.map(c => ({ value: c.id, label: c.name }))}
+          placeholder="พิมพ์ค้นหาชื่อลูกค้า"
+        />
       </div>
       {selectedCustomer && (selectedCustomer.gameIds || []).length > 0 && (
         <div className="pgs-field">
@@ -241,10 +245,13 @@ export default function OrderModal({ data, mode, item, onClose, onSave, onCancel
         <>
           <div className="pgs-field">
             <label className="pgs-label">ไอดีต้นทาง</label>
-            <select className="pgs-select" value={form.sourceAccountId} onChange={e => { set("sourceAccountId", e.target.value); set("stockItemId", null); }}>
-              <option value="">- ไม่ระบุ -</option>
-              {data.gameAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
+            <SearchSelect
+              value={form.sourceAccountId}
+              onChange={(v) => { set("sourceAccountId", v); set("stockItemId", null); }}
+              options={data.gameAccounts.map(a => ({ value: a.id, label: a.name }))}
+              emptyOption={{ value: "", label: "- ไม่ระบุ -" }}
+              placeholder="พิมพ์ค้นหาไอดีต้นทาง"
+            />
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <div className="pgs-field" style={{ flex: 2, position: "relative" }}>
